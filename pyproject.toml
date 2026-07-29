@@ -1,0 +1,18 @@
+[project]
+name = "kanban-system"
+version = "0.1.0"
+description = "独立于工作区的本地任务看板：MCP 工具 + Web UI + 钉钉决策升级"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "uvicorn>=0.30",
+    "starlette>=0.37",
+    "python-frontmatter>=1.1.0",
+]
+
+[project.optional-dependencies]
+dingtalk = ["dingtalk-stream>=0.24", "requests>=2.31"]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

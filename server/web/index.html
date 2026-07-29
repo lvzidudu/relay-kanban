@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relay Kanban</title>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0c10;          /* 页面底 — 更深 */
+    --panel: #13141a;       /* 列底 — 微透 */
+    --card: #1a1b22;        /* 卡片底 */
+    --card-hover: #21232b;
+    --border: #23242b;
+    --border-strong: #30323a;
+    --text: #e6e7eb;
+    --text-2: #8b8d98;      /* 次要文字 */
+    --text-3: #5c5e6a;      /* 弱文字 */
+    --accent: #5e6ad2;      /* 主操作靛蓝 */
+    --accent-hover: #6e7ae2;
+    /* 列语义色（状态点） */
+    --c-backlog: #5c5e6a;
+    --c-todo: #4ea7fc;
+    --c-doing: #f2c94c;
+    --c-review: #b17ceb;
+    --c-waiting: #f2994a;
+    --red: #eb5757;
+    --green: #27ae60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Inter", "PingFang SC", sans-serif;
+         background: var(--bg); color: var(--text); font-size: 14px;
+         -webkit-font-smoothing: antialiased; }
+  ::selection { background: rgba(94,106,210,.4); }
+
+  header { display: flex; align-items: center; justify-content: space-between;
+           padding: 0 24px; height: 60px; border-bottom: 1px solid var(--border); }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .logo { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
+                 background: linear-gradient(135deg, #ff9f4d, #ee5a4e);
+                 display: flex; align-items: center; justify-content: center;
+                 box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 1px 4px rgba(238,90,78,.35); }
+  .brand .logo svg { width: 14px; height: 14px; display: block; }
+  header h1 { font-size: 18px; font-weight: 800; letter-spacing: 0;
+              font-family: "Avenir Next", "Helvetica Neue", -apple-system, sans-serif; }
+  header h1 .sub { font-weight: 500; color: var(--text-2); margin-left: 6px; }
+  header h1 .dim { font-family: ui-monospace, "SF Mono", Menlo, monospace;
+                   color: var(--text-2); font-weight: 400; margin-left: 12px; font-size: 11.5px;
+                   background: var(--panel); border: 1px solid var(--border);
+                   padding: 3px 9px; border-radius: 6px; vertical-align: 2px; }
+  header button { padding: 7px 15px; border: 1px solid var(--border-strong); border-radius: 7px;
+                  background: var(--accent); color: #fff; font-size: 13px; cursor: pointer;
+                  font-weight: 500; transition: background .12s; }
+  header button:hover { background: var(--accent-hover); }
+  header button.secondary { background: transparent; color: var(--text-2); margin-right: 8px; }
+  header button.secondary:hover { background: var(--card-hover); color: var(--text); }
+
+  .filters { display: flex; align-items: center; gap: 8px; margin-left: auto; margin-right: 14px; }
+  .filters input, .filters select {
+    background: var(--panel); border: 1px solid var(--border-strong); border-radius: 7px;
+    color: var(--text); font-size: 12.5px; padding: 6px 10px; outline: none;
+    transition: border-color .12s; }
+  .filters input { width: 200px; }
+  .filters input:focus, .filters select:focus { border-color: var(--accent); }
+  .filters input::placeholder { color: var(--text-3); }
+  .filters select { cursor: pointer; color: var(--text-2); }
+
+  .board { display: flex; gap: 12px; padding: 16px 24px; overflow-x: auto;
+           min-height: calc(100vh - 60px); align-items: flex-start; }
+  .column { flex: 0 0 272px; width: 272px; background: var(--panel);
+            border: 1px solid var(--border); border-radius: 10px; padding: 10px;
+            border-top: 2px solid var(--col-color, var(--border)); }
+  .column h2 { font-size: 11px; font-weight: 600; color: var(--text-2);
+               text-transform: uppercase; letter-spacing: .8px;
+               padding: 2px 4px 10px; display: flex; align-items: center; gap: 7px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .column h2 .count { margin-left: auto; color: var(--text-3); font-weight: 500;
+                      font-variant-numeric: tabular-nums; }
+  .cards { min-height: 40px; display: flex; flex-direction: column; gap: 7px; }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+          padding: 10px 12px; cursor: grab;
+          border-left: 3px solid var(--card-accent, var(--border));
+          transition: border-color .12s, background .12s, transform .12s; }
+  .card:hover { background: var(--card-hover); border-color: var(--border-strong);
+                transform: translateY(-1px); }
+  .card.sortable-ghost { opacity: .35; border-style: dashed; }
+  .column.drag-over { border-color: var(--accent); background: rgba(94,106,210,.07);
+                      box-shadow: inset 0 0 0 1px rgba(94,106,210,.35); }
+  .card .tid { font-family: ui-monospace, "SF Mono", Menlo, monospace;
+               font-size: 11px; color: var(--text-3); margin-bottom: 4px; cursor: pointer; }
+  .card .tid:hover { color: var(--text); }
+  .card .title { font-size: 13px; line-height: 1.45; color: var(--text); }
+  .card .flags { margin-top: 8px; display: flex; gap: 5px; flex-wrap: wrap; }
+  .card .meta-row { margin-top: 6px; display: flex; align-items: center; gap: 8px;
+                    font-size: 11px; color: var(--text-3); }
+  .card .meta-row .timeline-badge { background: rgba(94,106,210,.15); color: var(--accent);
+                                    padding: 0 5px; border-radius: 3px; font-size: 10px; }
+  .flag { font-size: 10.5px; padding: 1px 7px; border-radius: 4px;
+          border: 1px solid var(--border-strong); color: var(--text-2); }
+  .flag.high { color: var(--red); border-color: rgba(235,87,87,.35); }
+  .flag.low { color: var(--text-3); }
+  .flag.unattended { color: var(--green); border-color: rgba(39,174,96,.35); }
+
+  .review-actions { margin-top: 10px; display: flex; gap: 6px; }
+  .review-actions button { flex: 1; padding: 4px 0; font-size: 12px; border-radius: 5px;
+                           border: 1px solid var(--border-strong); background: transparent;
+                           cursor: pointer; transition: background .12s; }
+  .review-actions button:hover { background: var(--card-hover); }
+  .review-actions .pass { color: var(--green); }
+  .review-actions .reject { color: var(--red); }
+
+  .modal-bg { position: fixed; inset: 0; background: rgba(5,6,9,.7); display: none;
+              align-items: flex-start; justify-content: center; padding: 7vh 16px; z-index: 10;
+              backdrop-filter: blur(2px); }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--border-strong);
+           border-radius: 12px; width: 640px; max-width: 100%; max-height: 82vh;
+           overflow-y: auto; padding: 22px 24px;
+           box-shadow: 0 16px 48px rgba(0,0,0,.5); }
+  .modal h3 { margin-bottom: 14px; font-size: 15px; font-weight: 600; }
+  .modal h3 .tid { font-family: ui-monospace, "SF Mono", Menlo, monospace;
+                   color: var(--text-3); font-weight: 400; margin-right: 8px; font-size: 13px;
+                   cursor: pointer; }
+  .modal h3 .tid:hover { color: var(--text); }
+  .modal pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+               padding: 14px; font-size: 12.5px; white-space: pre-wrap; word-break: break-all;
+               line-height: 1.65; color: var(--text-2);
+               font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .modal .meta { font-size: 12.5px; color: var(--text-2); margin-bottom: 14px; line-height: 1.9; }
+  .modal .meta b { color: var(--text-3); font-weight: 500; }
+  .modal.small { width: 440px; }
+  .modal .confirm-text { font-size: 13px; color: var(--text-2); line-height: 1.7; margin: 4px 0 6px; }
+  .modal .confirm-text code { background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+                              padding: 1px 6px; font-size: 12px; color: var(--text);
+                              font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  /* 描述区轻量 markdown */
+  .desc-md { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+             padding: 14px 16px; font-size: 13px; line-height: 1.7; color: var(--text-2);
+             margin-bottom: 16px; }
+  .desc-md p { margin: 4px 0; }
+  .desc-md ul { margin: 4px 0; padding-left: 20px; }
+  .desc-md li { margin: 2px 0; }
+  .desc-md code { background: var(--card); border: 1px solid var(--border); border-radius: 4px;
+                  padding: 1px 5px; font-size: 12px; color: var(--text);
+                  font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .desc-md strong { color: var(--text); font-weight: 600; }
+  .section-label { font-size: 11px; font-weight: 600; color: var(--text-3);
+                   text-transform: uppercase; letter-spacing: .8px; margin: 16px 0 8px; }
+
+  /* 时间线组件 */
+  .tl { position: relative; padding-left: 20px; margin-bottom: 4px; }
+  .tl::before { content: ''; position: absolute; left: 5px; top: 6px; bottom: 6px;
+                width: 2px; background: var(--border-strong); border-radius: 1px; }
+  .tl-item { position: relative; padding: 0 0 16px 12px; }
+  .tl-item:last-child { padding-bottom: 2px; }
+  .tl-item::before { content: ''; position: absolute; left: -20px; top: 5px;
+                     width: 8px; height: 8px; border-radius: 50%;
+                     background: var(--accent); border: 2px solid var(--panel);
+                     box-shadow: 0 0 0 2px rgba(94,106,210,.3); }
+  .tl-head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .tl-time { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px;
+             color: var(--text-2); }
+  .tl-src { font-size: 10.5px; padding: 1px 7px; border-radius: 4px;
+            border: 1px solid; opacity: .9; }
+  .tl-body { font-size: 12.5px; line-height: 1.65; color: var(--text-2);
+             background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+             padding: 10px 12px; }
+  .tl-body p { margin: 3px 0; }
+  .tl-body ul { margin: 3px 0; padding-left: 18px; }
+  .tl-body li { margin: 2px 0; }
+  .tl-body code { background: var(--card); border: 1px solid var(--border); border-radius: 4px;
+                  padding: 1px 5px; font-size: 11.5px; color: var(--text);
+                  font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .tl-body strong { color: var(--text); font-weight: 600; }
+
+  form label { display: block; font-size: 12px; color: var(--text-2); margin: 12px 0 5px; }
+  form input[type=text], form input[type=time], form input[type=number], form textarea, form select {
+    width: 100%; padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 6px;
+    font-size: 13px; background: var(--bg); color: var(--text); outline: none;
+    transition: border-color .12s; }
+  form input[type=text]:focus, form input[type=time]:focus, form input[type=number]:focus,
+  form textarea:focus, form select:focus {
+    border-color: var(--accent); }
+  form input[type=time] { color-scheme: dark; }
+  form textarea { min-height: 90px; resize: vertical; }
+  form .row { display: flex; gap: 12px; }
+  form .row > div { flex: 1; }
+  form .check { margin-top: 14px; font-size: 13px; color: var(--text-2); }
+  form .check input { accent-color: var(--accent); margin-right: 6px; }
+
+  .modal-actions { margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
+  .modal-actions button { padding: 7px 16px; border-radius: 6px; font-size: 13px;
+                          cursor: pointer; border: 1px solid var(--border-strong);
+                          transition: background .12s; }
+  .modal-actions .primary { background: var(--accent); color: #fff; border-color: transparent; }
+  .modal-actions .primary:hover { background: var(--accent-hover); }
+  .modal-actions .ghost { background: transparent; color: var(--text-2); }
+  .modal-actions .ghost:hover { background: var(--card-hover); }
+  .modal-actions .danger { background: transparent; color: var(--red);
+                           border-color: rgba(235,87,87,.35); margin-right: auto; }
+  .modal-actions .danger:hover { background: rgba(235,87,87,.1); }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+           background: var(--card); border: 1px solid var(--border-strong); color: var(--text);
+           padding: 9px 18px; border-radius: 8px; font-size: 13px; opacity: 0;
+           transition: opacity .2s; pointer-events: none; z-index: 20;
+           box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .toast.show { opacity: 1; }
+
+  .empty { color: var(--text-3); font-size: 12px; text-align: center; padding: 28px 0;
+           opacity: .55; letter-spacing: .3px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo"><svg viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2.5 2.5 L6.5 7 L2.5 11.5" stroke="rgba(255,255,255,.55)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M7.5 2.5 L11.5 7 L7.5 11.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg></span>
+    <h1>Relay<span class="sub">Kanban</span><span class="dim">~/.kanban</span></h1>
+  </div>
+  <div class="filters">
+    <input type="text" id="fKeyword" placeholder="搜索标题 / 标签 / 正文…" oninput="onKeywordInput()">
+    <select id="fTag" onchange="applyFilters()"><option value="">全部标签</option></select>
+    <select id="fPriority" onchange="applyFilters()">
+      <option value="">全部优先级</option>
+      <option value="high">high</option>
+      <option value="normal">normal</option>
+      <option value="low">low</option>
+    </select>
+  </div>
+  <button class="secondary" onclick="openSched()">⏰ 定时</button>
+  <button onclick="openCreate()">+ 新建任务</button>
+</header>
+
+<div class="board" id="board"></div>
+
+<!-- 任务详情 -->
+<div class="modal-bg" id="detailBg" onclick="if(event.target===this)closeModal('detailBg')">
+  <div class="modal" id="detailModal"></div>
+</div>
+
+<!-- 新建任务 -->
+<div class="modal-bg" id="createBg" onclick="if(event.target===this)closeModal('createBg')">
+  <div class="modal">
+    <h3>新建任务</h3>
+    <form id="createForm" onsubmit="return submitCreate(event)">
+      <label>标题 *</label>
+      <input type="text" name="title" required>
+      <label>描述（含验收标准）</label>
+      <textarea name="description"></textarea>
+      <div class="row">
+        <div><label>状态</label>
+          <select name="status"><option value="todo">todo</option><option value="backlog">backlog</option></select></div>
+        <div><label>优先级</label>
+          <select name="priority"><option value="normal">normal</option><option value="high">high</option><option value="low">low</option></select></div>
+      </div>
+      <label>关联工作区（绝对路径，可空）</label>
+      <input type="text" name="workspace">
+      <label>涉及文件（逗号分隔，可空）</label>
+      <input type="text" name="files">
+      <div class="check"><label style="display:inline"><input type="checkbox" name="unattended"> 允许无人定时执行</label></div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" onclick="closeModal('createBg')">取消</button>
+        <button type="submit" class="primary">创建</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- 内联原因弹窗（验收退回 / 废弃，替代 prompt） -->
+<div class="modal-bg" id="noteBg" onclick="if(event.target===this)cancelNote()">
+  <div class="modal small">
+    <h3 id="noteTitle"></h3>
+    <form id="noteForm" onsubmit="return submitNote(event)">
+      <textarea id="noteText" required placeholder=""></textarea>
+      <div class="modal-actions">
+        <button type="button" class="ghost" onclick="cancelNote()">取消</button>
+        <button type="submit" class="primary" id="noteSubmit">确认</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 内联确认弹窗（拖入 doing 时询问是否触发执行） -->
+<div class="modal-bg" id="confirmBg" onclick="if(event.target===this)resolveConfirm(false)">
+  <div class="modal small">
+    <h3 id="confirmTitle"></h3>
+    <p class="confirm-text" id="confirmText"></p>
+    <div class="modal-actions">
+      <button type="button" class="ghost" onclick="resolveConfirm(false)">仅流转</button>
+      <button type="button" class="primary" onclick="resolveConfirm(true)">复制执行命令</button>
+    </div>
+  </div>
+</div>
+
+<!-- 定时执行配置（意图层：落盘 schedule.json，由下次对话开场对账对齐 schedule MCP） -->
+<div class="modal-bg" id="schedBg" onclick="if(event.target===this)closeModal('schedBg')">
+  <div class="modal small">
+    <h3>定时执行配置</h3>
+    <form id="schedForm" onsubmit="return submitSched(event)">
+      <div class="check" style="margin-top:4px"><label style="display:inline"><input type="checkbox" name="enabled"> 启用每日定时捞任务（仅 unattended 任务）</label></div>
+      <div class="row">
+        <div><label>执行时刻</label>
+          <input type="time" name="time" required></div>
+        <div><label>单轮上限（1-10）</label>
+          <input type="number" name="max_per_run" min="1" max="10" required></div>
+      </div>
+      <p class="confirm-text" style="margin-top:14px">看板只记录意图：保存后由下一次对话的开场对账将 schedule MCP 定时任务对齐到该配置。</p>
+      <div class="modal-actions">
+        <button type="button" class="ghost" onclick="closeModal('schedBg')">取消</button>
+        <button type="submit" class="primary">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 编辑任务 -->
+<div class="modal-bg" id="editBg" onclick="if(event.target===this)closeModal('editBg')">
+  <div class="modal">
+    <h3>编辑任务</h3>
+    <form id="editForm" onsubmit="return submitEdit(event)">
+      <input type="hidden" name="task_id">
+      <label>标题 *</label>
+      <input type="text" name="title" required>
+      <label>描述（含验收标准）</label>
+      <textarea name="description"></textarea>
+      <div class="row">
+        <div><label>优先级</label>
+          <select name="priority"><option value="normal">normal</option><option value="high">high</option><option value="low">low</option></select></div>
+        <div><label>标签（逗号分隔）</label>
+          <input type="text" name="tags"></div>
+      </div>
+      <label>关联工作区（绝对路径，可空）</label>
+      <input type="text" name="workspace">
+      <label>涉及文件（逗号分隔，可空）</label>
+      <input type="text" name="files">
+      <div class="check"><label style="display:inline"><input type="checkbox" name="unattended"> 允许无人定时执行</label></div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" onclick="closeModal('editBg')">取消</button>
+        <button type="submit" class="primary">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const COLUMNS = [
+  { key: 'backlog', label: 'Backlog', color: 'var(--c-backlog)' },
+  { key: 'todo', label: 'Todo', color: 'var(--c-todo)' },
+  { key: 'doing', label: 'Doing', color: 'var(--c-doing)' },
+  { key: 'review', label: 'Review', color: 'var(--c-review)' },
+  { key: 'waiting_decision', label: 'Waiting', color: 'var(--c-waiting)' },
+];
+let sortables = [];
+const filter = { keyword: '', tag: '', priority: '' };
+let kwTimer = null;
+
+function onKeywordInput() {
+  clearTimeout(kwTimer);
+  kwTimer = setTimeout(() => {
+    filter.keyword = document.getElementById('fKeyword').value.trim();
+    render();
+  }, 300);
+}
+function applyFilters() {
+  filter.tag = document.getElementById('fTag').value;
+  filter.priority = document.getElementById('fPriority').value;
+  render();
+}
+function syncTagOptions(tasks) {
+  const sel = document.getElementById('fTag');
+  const cur = sel.value;
+  const tags = [...new Set(tasks.flatMap(t => t.tags || []))].sort();
+  if (cur && !tags.includes(cur)) tags.push(cur); // 保留当前选中项，避免过滤中选项消失
+  sel.innerHTML = '<option value="">全部标签</option>' +
+    tags.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  sel.value = cur;
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+async function api(path, opts) {
+  const resp = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || resp.statusText);
+  return data;
+}
+
+async function render() {
+  const qs = filter.keyword ? '?keyword=' + encodeURIComponent(filter.keyword) : '';
+  let tasks = await api('/api/tasks' + qs);
+  syncTagOptions(tasks);
+  if (filter.tag) tasks = tasks.filter(t => (t.tags || []).includes(filter.tag));
+  if (filter.priority) tasks = tasks.filter(t => t.priority === filter.priority);
+  const board = document.getElementById('board');
+  sortables.forEach(s => s.destroy());
+  sortables = [];
+  board.innerHTML = '';
+  for (const col of COLUMNS) {
+    const items = tasks.filter(t => t.status === col.key);
+    const colEl = document.createElement('div');
+    colEl.className = 'column';
+    colEl.style.setProperty('--col-color', col.color);
+    colEl.innerHTML = `<h2><span class="dot" style="background:${col.color}"></span>${col.label}<span class="count">${items.length}</span></h2>`;
+    const cards = document.createElement('div');
+    cards.className = 'cards';
+    cards.dataset.status = col.key;
+    if (!items.length) cards.innerHTML = '<div class="empty">暂无任务</div>';
+    for (const t of items) cards.appendChild(cardEl(t, col.key));
+    colEl.appendChild(cards);
+    board.appendChild(colEl);
+    sortables.push(new Sortable(cards, {
+      group: 'kanban', animation: 140, filter: '.empty',
+      onMove: (evt) => {
+        clearDragOver();
+        evt.to.closest('.column').classList.add('drag-over');
+      },
+      onEnd: async (evt) => {
+        clearDragOver();
+        const to = evt.to.dataset.status, from = evt.from.dataset.status;
+        if (to === from) return;
+        const id = evt.item.dataset.id;
+        let note = null;
+        if (from === 'review' && to === 'todo') {
+          note = await askNote('验收退回 · ' + id, '必须填写验收反馈，将写入时间线');
+          if (!note) { render(); return; }
+        }
+        try {
+          await api('/api/tasks/' + id, { method: 'PATCH', body: JSON.stringify({ status: to, note }) });
+          toast(`${id}: ${from} → ${to}`);
+          if (to === 'doing') {
+            // 看板不会自动执行，弹窗引导复制 run 命令到对话触发
+            const go = await askConfirm('已流转到 Doing · ' + id,
+              '看板本身不会自动执行任务。需在对话中运行 /kanban run ' + id + ' 触发执行，现在复制该命令？');
+            if (go) copyRunCmd(id);
+          }
+        } catch (e) { toast('流转被拒绝：' + e.message); }
+        render();
+      },
+    }));
+  }
+}
+
+function clearDragOver() {
+  document.querySelectorAll('.column.drag-over').forEach(c => c.classList.remove('drag-over'));
+}
+
+function hashColor(s) {
+  let h = 0; for (let i = 0; i < s.length; i++) h = s.charCodeAt(i) + ((h << 5) - h);
+  const hue = ((h % 360) + 360) % 360;
+  return `hsl(${hue}, 55%, 62%)`;
+}
+function relTime(d) {
+  if (!d) return '';
+  const diff = (Date.now() - new Date(d).getTime()) / 1000;
+  if (diff < 60) return '刚刚';
+  if (diff < 3600) return Math.floor(diff/60) + ' 分钟前';
+  if (diff < 86400) return Math.floor(diff/3600) + ' 小时前';
+  return Math.floor(diff/86400) + ' 天前';
+}
+
+function cardEl(t, colKey) {
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.dataset.id = t.id;
+  el.style.setProperty('--card-accent', colKey === 'backlog' ? 'var(--c-backlog)' :
+    colKey === 'todo' ? 'var(--c-todo)' : colKey === 'doing' ? 'var(--c-doing)' :
+    colKey === 'review' ? 'var(--c-review)' : 'var(--c-waiting)');
+  const flags = [];
+  if (t.priority !== 'normal') flags.push(`<span class="flag ${t.priority}">${t.priority}</span>`);
+  if (t.unattended) flags.push('<span class="flag unattended">unattended</span>');
+  (t.tags || []).forEach(tag => {
+    const c = hashColor(tag);
+    flags.push(`<span class="flag" style="color:${c};border-color:${c}44">${tag}</span>`);
+  });
+  const tlCount = (t.content || '').match(/### \d{4}-/g)?.length || 0;
+  const metaHtml = `<div class="meta-row"><span>${relTime(t.updated)}</span>${tlCount ? `<span class="timeline-badge">📝 ${tlCount}</span>` : ''}</div>`;
+  el.innerHTML = `<div class="tid" title="点击复制任务 ID">${t.id}</div><div class="title">${t.title}</div>` +
+    metaHtml + (flags.length ? `<div class="flags">${flags.join('')}</div>` : '');
+  el.querySelector('.tid').onclick = (e) => { e.stopPropagation(); copyId(t.id); };
+  if (colKey === 'review') {
+    const actions = document.createElement('div');
+    actions.className = 'review-actions';
+    actions.innerHTML = `<button class="pass">通过归档</button><button class="reject">退回</button>`;
+    actions.querySelector('.pass').onclick = (e) => { e.stopPropagation(); transition(t.id, 'done'); };
+    actions.querySelector('.reject').onclick = async (e) => {
+      e.stopPropagation();
+      const note = await askNote('验收退回 · ' + t.id, '必须填写验收反馈，将写入时间线');
+      if (note) transition(t.id, 'todo', note);
+    };
+    el.appendChild(actions);
+  }
+  el.onclick = () => openDetail(t.id);
+  return el;
+}
+
+async function transition(id, status, note) {
+  try {
+    await api('/api/tasks/' + id, { method: 'PATCH', body: JSON.stringify({ status, note: note || null }) });
+    toast(`${id} → ${status}`);
+  } catch (e) { toast('流转被拒绝：' + e.message); }
+  render();
+}
+
+async function openDetail(id) {
+  try {
+    const t = await api('/api/tasks/' + id);
+    const { desc, entries } = parseContent(t.content || '');
+    const tlHtml = entries.length ? '<div class="tl">' + entries.map(en => {
+      const c = hashColor(en.source || 'src');
+      return `<div class="tl-item"><div class="tl-head"><span class="tl-time">${escapeHtml(en.time)}</span>` +
+        (en.source ? `<span class="tl-src" style="color:${c};border-color:${c}55">${escapeHtml(en.source)}</span>` : '') +
+        `</div><div class="tl-body">${mdLite(en.body)}</div></div>`;
+    }).join('') + '</div>' : '<div class="empty">暂无时间线</div>';
+    const m = document.getElementById('detailModal');
+    m.innerHTML = `<h3><span class="tid" title="点击复制任务 ID" onclick="copyId('${t.id}')">${t.id}</span>${t.title}</h3>
+      <div class="meta"><b>状态</b> ${t.status} ｜ <b>优先级</b> ${t.priority} ｜ <b>无人执行</b> ${t.unattended ? '是' : '否'}<br>
+      <b>工作区</b> ${t.workspace || '—'}<br><b>涉及文件</b> ${(t.files || []).join(', ') || '—'}<br>
+      <b>创建</b> ${t.created} ｜ <b>更新</b> ${t.updated}</div>
+      <div class="section-label">任务描述</div>
+      <div class="desc-md">${desc ? mdLite(desc) : '<p style="opacity:.5">—</p>'}</div>
+      <div class="section-label">时间线</div>
+      ${tlHtml}
+      <div class="modal-actions">
+        <button class="danger" onclick="discardTask('${t.id}')">废弃</button>
+        <button class="ghost" onclick="openEdit('${t.id}')">编辑</button>
+        <button class="ghost" onclick="closeModal('detailBg')">关闭</button>
+      </div>`;
+    document.getElementById('detailBg').classList.add('open');
+  } catch (e) { toast(e.message); }
+}
+
+// 拆解任务正文：描述分区 + 时间线条目（### 时间 来源）
+function parseContent(content) {
+  const mDesc = content.match(/## 任务描述\n+([\s\S]*?)(?=\n## 时间线|$)/);
+  const desc = mDesc ? mDesc[1].trim() : '';
+  const mTl = content.match(/## 时间线\n+([\s\S]*)$/);
+  const entries = [];
+  if (mTl) {
+    const re = /### (.+)\n?([\s\S]*?)(?=\n### |$)/g;
+    let m;
+    while ((m = re.exec(mTl[1])) !== null) {
+      const head = m[1].trim();
+      const hm = head.match(/^(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\s*(.*)$/);
+      entries.push({ time: hm ? hm[1] : head, source: hm ? hm[2] : '', body: m[2].trim() });
+    }
+  }
+  return { desc, entries };
+}
+
+// 轻量 markdown：无序列表 / 行内代码 / 加粗，先整体转义再渲染
+function mdLite(src) {
+  const inline = s => s.replace(/`([^`]+)`/g, '<code>$1</code>')
+                       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  let html = '', inList = false;
+  for (const line of escapeHtml(src).split('\n')) {
+    const li = line.match(/^\s*[-*]\s+(.*)/);
+    if (li) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += '<li>' + inline(li[1]) + '</li>';
+    } else {
+      if (inList) { html += '</ul>'; inList = false; }
+      if (line.trim()) html += '<p>' + inline(line) + '</p>';
+    }
+  }
+  if (inList) html += '</ul>';
+  return html;
+}
+
+// 内联原因弹窗：Promise 化，确认返回文本，取消返回 null
+let noteResolve = null;
+function askNote(title, placeholder) {
+  return new Promise(resolve => {
+    noteResolve = resolve;
+    document.getElementById('noteTitle').textContent = title;
+    const ta = document.getElementById('noteText');
+    ta.value = '';
+    ta.placeholder = placeholder || '';
+    document.getElementById('noteBg').classList.add('open');
+    setTimeout(() => ta.focus(), 50);
+  });
+}
+function submitNote(e) {
+  e.preventDefault();
+  const v = document.getElementById('noteText').value.trim();
+  if (!v) return false;
+  document.getElementById('noteBg').classList.remove('open');
+  const r = noteResolve; noteResolve = null;
+  if (r) r(v);
+  return false;
+}
+function cancelNote() {
+  document.getElementById('noteBg').classList.remove('open');
+  const r = noteResolve; noteResolve = null;
+  if (r) r(null);
+}
+
+// 内联确认弹窗：Promise 化，确认 true / 取消 false
+let confirmResolve = null;
+function askConfirm(title, text) {
+  return new Promise(resolve => {
+    confirmResolve = resolve;
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmText').textContent = text;
+    document.getElementById('confirmBg').classList.add('open');
+  });
+}
+function resolveConfirm(v) {
+  document.getElementById('confirmBg').classList.remove('open');
+  const r = confirmResolve; confirmResolve = null;
+  if (r) r(v);
+}
+
+async function discardTask(id) {
+  const reason = await askNote('废弃任务 · ' + id, '必须填写废弃原因，将写入时间线并归档');
+  if (!reason) return;
+  try {
+    await api('/api/tasks/' + id + '/discard', { method: 'POST', body: JSON.stringify({ reason }) });
+    toast(id + ' 已废弃并归档');
+    closeModal('detailBg');
+  } catch (e) { toast(e.message); }
+  render();
+}
+
+async function openEdit(id) {
+  try {
+    const t = await api('/api/tasks/' + id);
+    const f = document.getElementById('editForm');
+    f.task_id.value = t.id;
+    f.title.value = t.title;
+    // 从正文提取任务描述分区（时间线不可编辑）
+    const mDesc = t.content.match(/## 任务描述\n+([\s\S]*?)\n+## 时间线/);
+    f.description.value = mDesc ? mDesc[1].trim() : '';
+    f.priority.value = t.priority;
+    f.tags.value = (t.tags || []).join(', ');
+    f.workspace.value = t.workspace || '';
+    f.files.value = (t.files || []).join(', ');
+    f.unattended.checked = !!t.unattended;
+    closeModal('detailBg');
+    document.getElementById('editBg').classList.add('open');
+  } catch (e) { toast(e.message); }
+}
+
+async function submitEdit(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const body = {
+    title: f.get('title'), description: f.get('description') || '',
+    priority: f.get('priority'), unattended: !!f.get('unattended'),
+    workspace: f.get('workspace') || '',
+    files: (f.get('files') || '').split(',').map(s => s.trim()).filter(Boolean),
+    tags: (f.get('tags') || '').split(',').map(s => s.trim()).filter(Boolean),
+  };
+  try {
+    await api('/api/tasks/' + f.get('task_id'), { method: 'PUT', body: JSON.stringify(body) });
+    toast(f.get('task_id') + ' 已保存');
+    closeModal('editBg');
+    render();
+  } catch (err) { toast(err.message); }
+  return false;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// 快路径降级方案：复制 ID 或 run 命令后到对话中触发
+async function copyText(s) {
+  try {
+    await navigator.clipboard.writeText(s);
+  } catch (_) {
+    const ta = document.createElement('textarea');
+    ta.value = s;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  }
+}
+async function copyId(id) {
+  await copyText(id);
+  toast(`已复制 ${id}，对话中可执行 /kanban run ${id}`);
+}
+async function copyRunCmd(id) {
+  await copyText('/kanban run ' + id);
+  toast(`已复制 /kanban run ${id}，粘贴到对话即可触发执行`);
+}
+
+function openCreate() { document.getElementById('createBg').classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+async function openSched() {
+  try {
+    const s = await api('/api/schedule');
+    const f = document.getElementById('schedForm');
+    f.enabled.checked = !!s.enabled;
+    f.time.value = s.time || '10:00';
+    f.max_per_run.value = s.max_per_run || 3;
+    document.getElementById('schedBg').classList.add('open');
+  } catch (e) { toast(e.message); }
+}
+
+async function submitSched(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    await api('/api/schedule', { method: 'PUT', body: JSON.stringify({
+      enabled: !!f.get('enabled'), time: f.get('time'),
+      max_per_run: parseInt(f.get('max_per_run'), 10) }) });
+    toast('定时配置已保存，下次对话开场对账时自动对齐');
+    closeModal('schedBg');
+  } catch (err) { toast(err.message); }
+  return false;
+}
+
+async function submitCreate(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const body = {
+    title: f.get('title'), description: f.get('description') || '',
+    status: f.get('status'), priority: f.get('priority'),
+    unattended: !!f.get('unattended'),
+    workspace: f.get('workspace') || null,
+    files: (f.get('files') || '').split(',').map(s => s.trim()).filter(Boolean),
+  };
+  try {
+    const r = await api('/api/tasks', { method: 'POST', body: JSON.stringify(body) });
+    toast('已创建 ' + r.task_id);
+    closeModal('createBg');
+    e.target.reset();
+    render();
+  } catch (err) { toast(err.message); }
+  return false;
+}
+
+render();
+setInterval(render, 30000); // 30s 轮询，保持与对话侧变更同步
+</script>
+</body>
+</html>

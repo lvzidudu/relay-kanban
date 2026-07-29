@@ -1,0 +1,18 @@
+# venv
+.venv/
+.venv312/
+
+# python
+__pycache__/
+*.egg-info/
+.pytest_cache/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
