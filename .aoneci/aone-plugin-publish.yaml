@@ -37,11 +37,11 @@ jobs:
       - uses: aone-plugin-publish@1.0.1
         inputs:
           path: "."
-          plugin: $params.plugin
+          plugin: "relay-kanban"
           packageName: "relay-kanban"
-          version: $params.version
-          tag: $params.tag
-          token: $params.token
-          env: $params.env
-          changelog: $params.changelog
-          config: $params.config
+          version: ${{ params.version }}
+          tag: "latest"
+          token: ${{ params.token }}
+          env: "prod"
+          changelog: ""
+          config: "{}"
