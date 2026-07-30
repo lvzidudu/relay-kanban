@@ -42,7 +42,7 @@ echo "✅ 依赖安装完成"
 
 # ---------- 2. 部署 skill ----------
 mkdir -p "$QODER_DIR/skills/kanban"
-cp "$REPO_DIR/skill/kanban/SKILL.md" "$QODER_DIR/skills/kanban/SKILL.md"
+cp "$REPO_DIR/skills/kanban/SKILL.md" "$QODER_DIR/skills/kanban/SKILL.md"
 echo "✅ Skill 已部署到 $QODER_DIR/skills/kanban/"
 
 # ---------- 3. 部署 rules（已存在则跳过，避免覆盖本地修改） ----------

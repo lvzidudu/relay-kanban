@@ -5,7 +5,7 @@
 Relay：独立于工作区的本地任务看板，按功能维度聚合跨对话上下文，人负责发布任务与验收，agent 负责捞任务接力执行。
 
 - 数据目录：`~/.kanban/`（任务文件 + BOARD.md 索引，可自行 git 管理）
-- Skill：`~/.qoder/skills/kanban/SKILL.md`（源文件在本仓库 `skill/kanban/`，修改后需重新复制部署）
+- Skill：`~/.qoder/skills/kanban/SKILL.md`（源文件在本仓库 `skills/kanban/`，修改后需重新复制部署）
 - 服务：MCP 工具（stdio） + 看板 Web UI（http://localhost:7654），同进程同数据源
 
 ## 安装与启动
@@ -152,8 +152,11 @@ server/
 ├── state_machine.py  # 流转规则单一实现
 ├── dingtalk.py       # P3：Stream 客户端 + 单聊发送（config.json 存在时启用）
 └── web/index.html    # 看板 UI（零构建，能力见上节）
-skill/kanban/SKILL.md # kanban skill 源文件（install.sh 部署到 ~/.qoder/skills/kanban/）
-rules/                # 三条 always-on 规则源文件（install.sh 部署到 ~/.qoder/rules/）
+skills/kanban/SKILL.md # kanban skill 源文件（install.sh 部署到 ~/.qoder/skills/kanban/；也是插件的 skills 组件）
+rules/                # 三条 always-on 规则源文件（install.sh 部署到 ~/.qoder/rules/；也是插件的 rules 组件）
+.qoder-plugin/plugin.json # 标准 Plugin 清单（仓库根目录即插件根，声明 skills/rules/mcpServers）
+mcp.json              # 插件 MCP 配置（含 <KANBAN_REPO> 占位路径，安装说明见 CONNECTORS.md）
+CONNECTORS.md         # 插件使用者的 MCP 服务端安装与连接说明
 install.sh            # 一键安装：venv + 依赖 + skill/rules 部署 + MCP 配置打印
 templates/BOARD.md    # 空看板模板
 tests/test_kanban.py  # 状态机流转表逐格覆盖 + 存储层 + 钉钉回复容错
