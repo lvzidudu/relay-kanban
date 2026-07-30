@@ -4,16 +4,6 @@ params:
   plugin:
     type: string
     default: "relay-kanban"
-  packageName:
-    type: string
-    default: "relay-kanban"
-  mode:
-    type: string
-    default: "standard"
-    options: [ "standard", "simple" ]
-  skillNames:
-    type: string
-    default: "[]"
   version:
     type: string
     required: true
@@ -43,14 +33,12 @@ jobs:
       - uses: checkout
       - uses: setup-env
         inputs:
-          node-version: 18 # 或者更高版本
-      - uses: aone-plugin-publish
+          node-version: 18
+      - uses: aone-plugin-publish@1.0.1
         inputs:
           path: "."
           plugin: $params.plugin
-          packageName: $params.packageName
-          mode: $params.mode
-          skillNames: $params.skillNames
+          packageName: "relay-kanban"
           version: $params.version
           tag: $params.tag
           token: $params.token
