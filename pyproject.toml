@@ -12,7 +12,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dingtalk = ["dingtalk-stream>=0.24", "requests>=2.31"]
+embed = ["sentence-transformers>=2.2", "numpy>=1.24"]
 dev = ["pytest>=8.0"]
+
+[tool.setuptools]
+# flat-layout 下有 skill/rules/templates 等非代码目录，显式声明只打包 server
+packages = ["server"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

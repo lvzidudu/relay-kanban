@@ -43,7 +43,7 @@
   .brand .logo svg { width: 14px; height: 14px; display: block; }
   header h1 { font-size: 18px; font-weight: 800; letter-spacing: 0;
               font-family: "Avenir Next", "Helvetica Neue", -apple-system, sans-serif; }
-  header h1 .sub { font-weight: 500; color: var(--text-2); margin-left: 6px; }
+  header h1 .sub { margin-left: 6px; }
   header h1 .dim { font-family: ui-monospace, "SF Mono", Menlo, monospace;
                    color: var(--text-2); font-weight: 400; margin-left: 12px; font-size: 11.5px;
                    background: var(--panel); border: 1px solid var(--border);
@@ -100,7 +100,11 @@
           border: 1px solid var(--border-strong); color: var(--text-2); }
   .flag.high { color: var(--red); border-color: rgba(235,87,87,.35); }
   .flag.low { color: var(--text-3); }
-  .flag.unattended { color: var(--green); border-color: rgba(39,174,96,.35); }
+  .flag.unattended { color: var(--green); border: none; border-radius: 999px;
+                     background: rgba(39,174,96,.14); font-weight: 600; padding: 2px 9px 2px 7px;
+                     display: inline-flex; align-items: center; gap: 4px; }
+  .flag.unattended::before { content: ''; width: 5px; height: 5px; border-radius: 50%;
+                             background: var(--green); box-shadow: 0 0 5px rgba(39,174,96,.8); }
 
   .review-actions { margin-top: 10px; display: flex; gap: 6px; }
   .review-actions button { flex: 1; padding: 4px 0; font-size: 12px; border-radius: 5px;
@@ -299,7 +303,7 @@
   </div>
 </div>
 
-<!-- 定时执行配置（意图层：落盘 schedule.json，由下次对话开场对账对齐 schedule MCP） -->
+<!-- 定时执行配置（唯一事实源：落盘 schedule.json，定时链每次触发时自读对齐；首次启用需对话点火） -->
 <div class="modal-bg" id="schedBg" onclick="if(event.target===this)closeModal('schedBg')">
   <div class="modal small">
     <h3>定时执行配置</h3>
@@ -311,7 +315,7 @@
         <div><label>单轮上限（1-10）</label>
           <input type="number" name="max_per_run" min="1" max="10" required></div>
       </div>
-      <p class="confirm-text" style="margin-top:14px">看板只记录意图：保存后由下一次对话的开场对账将 schedule MCP 定时任务对齐到该配置。</p>
+      <p class="confirm-text" style="margin-top:14px">配置保存后，已在跑的定时链会在下一次触发时自动读取新配置（时刻变更次日生效）；若从未启用过，需在对话里说“检查看板定时链”完成首次点火。</p>
       <div class="modal-actions">
         <button type="button" class="ghost" onclick="closeModal('schedBg')">取消</button>
         <button type="submit" class="primary">保存</button>
@@ -718,7 +722,7 @@ async function submitSched(e) {
     await api('/api/schedule', { method: 'PUT', body: JSON.stringify({
       enabled: !!f.get('enabled'), time: f.get('time'),
       max_per_run: parseInt(f.get('max_per_run'), 10) }) });
-    toast('定时配置已保存，下次对话开场对账时自动对齐');
+    toast('定时配置已保存，定时链下次触发时自动生效');
     closeModal('schedBg');
   } catch (err) { toast(err.message); }
   return false;

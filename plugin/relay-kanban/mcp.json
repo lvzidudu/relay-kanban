@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "kanban": {
+      "command": "<KANBAN_REPO>/.venv/bin/python",
+      "args": ["-m", "server.main"],
+      "cwd": "<KANBAN_REPO>"
+    }
+  }
+}

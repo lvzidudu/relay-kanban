@@ -1,7 +1,9 @@
 """状态机与存储层单元测试。存储测试通过 monkeypatch 重定向数据目录到 tmp_path。"""
+import json
+
 import pytest
 
-from server import dingtalk, state_machine, storage
+from server import dingtalk, embedding, state_machine, storage
 from server.state_machine import TransitionError, validate_transition
 
 
@@ -52,6 +54,13 @@ def test_unknown_status_rejected():
 
 
 # ---------- 存储层 ----------
+
+@pytest.fixture(autouse=True)
+def _no_real_model(monkeypatch):
+    """默认禁用真实 embedding（即使环境装了 sentence-transformers），
+    避免存储层测试经写入钩子触发模型加载；embed_env 会显式覆盖。"""
+    monkeypatch.setattr(embedding, "_HAS_ST", False)
+
 
 @pytest.fixture
 def kanban_home(tmp_path, monkeypatch):
@@ -265,3 +274,98 @@ def test_schedule_watchdog_helpers(kanban_home):
     # 刚写入的任务文件应被认为"有执行痕迹"
     assert storage.tasks_touched_since(dt.datetime.now() - dt.timedelta(minutes=1))
     assert not storage.tasks_touched_since(dt.datetime.now() + dt.timedelta(minutes=1))
+
+
+# ---------- 语义检索（mock 模型编码，不依赖真实 sentence-transformers） ----------
+
+@pytest.fixture
+def embed_env(kanban_home, monkeypatch):
+    """模拟 embed 依赖已安装：_encode 按关键词返回确定性伪向量。"""
+    np = pytest.importorskip("numpy")
+    monkeypatch.setattr(embedding, "_HAS_ST", True)
+
+    def fake_encode(texts):
+        vecs = []
+        for t in texts:
+            if "auth" in t:
+                vecs.append([1.0, 0.0, 0.0])
+            elif "pay" in t:
+                vecs.append([0.0, 1.0, 0.0])
+            else:
+                vecs.append([0.0, 0.0, 1.0])
+        return np.asarray(vecs, dtype=np.float32)
+
+    monkeypatch.setattr(embedding, "_encode", fake_encode)
+    return np
+
+
+def test_semantic_search_returns_results(embed_env):
+    t_auth = storage.add_task("登录模块重构", "auth 相关改造")
+    t_pay = storage.add_task("支付对账", "pay 渠道对账")
+    hits = embedding.semantic_search("找一下 auth 相关的任务", limit=2)
+    assert [h["id"] for h in hits] == [t_auth, t_pay]
+    assert hits[0]["score"] == pytest.approx(1.0, abs=1e-3)
+    assert hits[0]["score"] > hits[1]["score"]
+
+
+def test_semantic_search_degrades_gracefully(kanban_home, monkeypatch):
+    monkeypatch.setattr(embedding, "_HAS_ST", False)
+    assert embedding.semantic_search("任意查询") == []
+    embedding.upsert_task({"id": "T001", "title": "x", "content": ""})  # no-op 不抛异常
+    embedding.ensure_index()
+    assert not (kanban_home / "index").exists()
+
+
+def test_upsert_and_remove(embed_env, kanban_home):
+    t1 = storage.add_task("auth 任务", "x")
+    t2 = storage.add_task("pay 任务", "x")
+    meta = json.loads((kanban_home / "index" / "meta.json").read_text())
+    vectors = embed_env.load(kanban_home / "index" / "vectors.npy")
+    assert meta["task_ids"] == [t1, t2]
+    assert meta["row_map"] == {t1: 0, t2: 1}
+    assert vectors.shape[0] == 2
+    # 废弃后从索引移除，meta 与向量行数保持一致
+    storage.discard_task(t1, "不需要了")
+    meta = json.loads((kanban_home / "index" / "meta.json").read_text())
+    vectors = embed_env.load(kanban_home / "index" / "vectors.npy")
+    assert meta["task_ids"] == [t2] and vectors.shape[0] == 1
+    assert [h["id"] for h in embedding.semantic_search("auth", limit=5)] == [t2]
+
+
+def test_edit_task_reembeds(embed_env):
+    tid = storage.add_task("auth 任务", "x")
+    storage.edit_task(tid, title="pay 任务", description="改做支付")
+    hits = embedding.semantic_search("pay 相关", limit=1)
+    assert hits[0]["id"] == tid and hits[0]["score"] == pytest.approx(1.0, abs=1e-3)
+
+
+def test_done_task_removed_from_index(embed_env, kanban_home):
+    tid = storage.add_task("auth 任务", "x")
+    storage.update_status(tid, "doing")
+    storage.update_status(tid, "review")
+    storage.update_status(tid, "done")
+    meta = json.loads((kanban_home / "index" / "meta.json").read_text())
+    assert meta["task_ids"] == []
+    assert embedding.semantic_search("auth", limit=5) == []
+
+
+def test_index_persistence(embed_env, kanban_home, monkeypatch):
+    t1 = storage.add_task("auth 任务", "x")
+    # 重新从磁盘加载：数据完整，无需重建
+    vectors, meta = embedding._load_index()
+    assert meta["model"] == embedding.MODEL_NAME
+    assert meta["task_ids"] == [t1] and vectors.shape[0] == 1
+    # ensure_index 在索引完好时不触发全量重建
+    called = []
+    monkeypatch.setattr(embedding, "build_index", lambda tasks: called.append(1))
+    embedding.ensure_index()
+    assert called == []
+
+
+def test_index_corruption_does_not_block_writes(embed_env, kanban_home):
+    storage.add_task("auth 任务", "x")
+    (kanban_home / "index" / "meta.json").write_text("{broken")
+    # 索引损坏时搜索降级为空，核心写入不受影响
+    assert embedding.semantic_search("auth") == []
+    t2 = storage.add_task("pay 任务", "x")
+    assert storage.get_task(t2)["title"] == "pay 任务"

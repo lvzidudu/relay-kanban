@@ -47,7 +47,7 @@ echo "✅ Skill 已部署到 $QODER_DIR/skills/kanban/"
 
 # ---------- 3. 部署 rules（已存在则跳过，避免覆盖本地修改） ----------
 mkdir -p "$QODER_DIR/rules"
-for rule in kanban-writeback.md kanban-capture.md; do
+for rule in kanban-writeback.md kanban-capture.md kanban-boot.md; do
   if [ -f "$QODER_DIR/rules/$rule" ]; then
     echo "⏭️  rules/$rule 已存在，跳过"
   else

@@ -38,6 +38,23 @@ class TaskNotFound(Exception):
     pass
 
 
+def _index_upsert(task_id: str) -> None:
+    """语义索引增量同步（增强功能）：失败不阻断核心写入流程。"""
+    try:
+        from . import embedding
+        embedding.upsert_task(get_task(task_id))
+    except Exception:
+        pass
+
+
+def _index_remove(task_id: str) -> None:
+    try:
+        from . import embedding
+        embedding.remove_task(task_id)
+    except Exception:
+        pass
+
+
 def ensure_dirs() -> None:
     TASKS_DIR.mkdir(parents=True, exist_ok=True)
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
@@ -173,6 +190,7 @@ def add_task(title: str, description: str, status: str = "todo",
     post = frontmatter.Post(content, **meta)
     _dump(post, TASKS_DIR / f"{task_id}-{_safe_title(title)}.md")
     rebuild_board()
+    _index_upsert(task_id)
     return task_id
 
 
@@ -199,6 +217,7 @@ def update_status(task_id: str, new_status: str, note: str | None = None,
         month_dir.mkdir(parents=True, exist_ok=True)
         _dump(post, month_dir / path.name)
         path.unlink()
+        _index_remove(task_id)
     else:
         _dump(post, path)
     rebuild_board()
@@ -250,6 +269,7 @@ def edit_task(task_id: str, title: str | None = None, description: str | None = 
         path.unlink()
     _dump(post, new_path)
     rebuild_board()
+    _index_upsert(task_id)
     return {"id": task_id, "updated": True}
 
 
@@ -268,6 +288,7 @@ def discard_task(task_id: str, reason: str) -> dict:
     _dump(post, month_dir / path.name)
     path.unlink()
     rebuild_board()
+    _index_remove(task_id)
     return {"id": task_id, "status": "discarded"}
 
 

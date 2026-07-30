@@ -20,7 +20,7 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Route
 
-from . import dingtalk, storage
+from . import dingtalk, embedding, storage
 from .state_machine import TransitionError
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -51,6 +51,31 @@ def list_tasks(status: str = "", keyword: str = "", file_path: str = "") -> str:
     tasks = storage.list_tasks(status=status or None, keyword=keyword or None,
                                file_path=file_path or None)
     return json.dumps(tasks, ensure_ascii=False)
+
+
+def _search_enriched(query: str, limit: int) -> list[dict]:
+    """语义检索并补全任务摘要字段；索引中残留的已归档任务静默跳过。"""
+    enriched = []
+    for r in embedding.semantic_search(query, limit=limit):
+        try:
+            task = storage.get_task(r["id"])
+        except storage.TaskNotFound:
+            continue
+        enriched.append({**r, "title": task["title"], "status": task["status"],
+                         "priority": task["priority"], "tags": task["tags"]})
+    return enriched
+
+
+@mcp.tool()
+def search_tasks(query: str, limit: int = 5) -> str:
+    """语义搜索任务：用自然语言描述你要找的任务，返回最相关的结果。
+    适用于回忆历史任务、用词不确定的场景。精确搜索请用 list_tasks 的 keyword 参数。"""
+    results = _search_enriched(query, limit)
+    if not results:
+        return json.dumps({"results": [], "hint": "语义索引不可用或未安装 sentence-transformers，"
+                                                 "请回退到 list_tasks 的 keyword 精确搜索"},
+                          ensure_ascii=False)
+    return json.dumps({"results": results}, ensure_ascii=False)
 
 
 @mcp.tool()
@@ -148,6 +173,21 @@ async def api_list_tasks(request: Request):
     return JSONResponse(tasks)
 
 
+async def api_search_tasks(request: Request):
+    q = request.query_params
+    query = (q.get("query") or "").strip()
+    if not query:
+        return JSONResponse({"error": "query 必填"}, status_code=400)
+    try:
+        limit = int(q.get("limit", 5))
+    except ValueError:
+        return JSONResponse({"error": "limit 需为整数"}, status_code=400)
+    results = _search_enriched(query, limit)
+    if not results:
+        return JSONResponse({"results": [], "hint": "语义索引不可用或未安装 sentence-transformers"})
+    return JSONResponse({"results": results})
+
+
 async def api_get_task(request: Request):
     try:
         return JSONResponse(storage.get_task(request.path_params["task_id"]))
@@ -241,6 +281,7 @@ app = Starlette(routes=[
     Route("/", page_index),
     Route("/api/tasks", api_list_tasks, methods=["GET"]),
     Route("/api/tasks", api_create_task, methods=["POST"]),
+    Route("/api/search", api_search_tasks, methods=["GET"]),
     Route("/api/schedule", api_get_schedule, methods=["GET"]),
     Route("/api/schedule", api_put_schedule, methods=["PUT"]),
     Route("/api/tasks/{task_id}", api_get_task, methods=["GET"]),
@@ -313,6 +354,7 @@ def start_web(background: bool) -> None:
 def main() -> None:
     storage.ensure_dirs()
     storage.rebuild_board()
+    embedding.ensure_index()  # 索引缺失/模型不匹配时重建；未装 embed 依赖时 no-op
     dingtalk.start_stream_client()  # 无 config.json 时静默跳过
     start_watchdog()  # 定时兜底提醒，未启用定时/未配钉钉时空转
     if "--web-only" in sys.argv:

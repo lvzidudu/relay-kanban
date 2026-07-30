@@ -13,7 +13,7 @@ Relay：独立于工作区的本地任务看板，按功能维度聚合跨对话
 要求 Python >= 3.10（或已安装 [uv](https://github.com/astral-sh/uv)，脚本会自动用它装受管 Python 3.12）：
 
 ```bash
-git clone <repo-url> && cd kanban-system
+git clone https://code.alibaba-inc.com/lg-qingxingzhou/kanban-system.git && cd kanban-system
 ./install.sh            # 建 venv + 装依赖 + 部署 skill/rules + 初始化 ~/.kanban/
 ./install.sh --launchd  # 可选：额外把 Web UI 注册为 macOS 开机常驻服务
 ```
@@ -46,9 +46,22 @@ git clone <repo-url> && cd kanban-system
 
 注册后 Qoder 对话即可调用工具：`add_task` / `list_tasks` / `get_task` / `update_status` / `append_task_log` / `edit_task` / `discard_task` / `request_decision` / `wait_for_decision`。MCP 启动时会同时在 7654 端口拉起看板 UI。
 
-## 全局 Rules（MVP 必做，共两条，install.sh 自动部署）
+## 全局 Rules（MVP 必做，共三条，install.sh 自动部署）
 
-skill 只在被唤起时生效，"随手开的对话"需要 always-on 规则兜底。两条规则源文件在本仓库 `rules/`，`install.sh` 会部署到 `~/.qoder/rules/`（已存在则跳过，不覆盖本地修改），`alwaysApply: true`：
+skill 只在被唤起时生效，"随手开的对话"需要 always-on 规则兜底。三条规则源文件在本仓库 `rules/`，`install.sh` 会部署到 `~/.qoder/rules/`（已存在则跳过，不覆盖本地修改），`alwaysApply: true`：
+
+**kanban-boot.md（开场简报，开场对账的 always-on 入口）：**
+
+```
+每次新对话的首轮回复前，先读 ~/.kanban/BOARD.md（读不到时可用 kanban MCP 的
+list_tasks 或 GET http://localhost:7654/api/tasks 代替）：若存在 todo/review/
+waiting_decision 任务，在回答正题前先一句话简报"当前 N 条待办、M 条待验收，
+要处理吗？"；看板为空则完全静默，不提看板。简报后若用户要处理，或需要执行
+定时对齐与补录扫描等完整开场对账流程，加载 kanban skill 执行。本规则仅在对话
+首轮生效，后续轮次不重复简报。
+```
+
+> 为什么需要这条：开场对账的完整流程写在 SKILL.md 里，但 skill 是按需触发的——新对话首句通常与看板无关，skill 不会被加载，对账便不会发生。这条 rule 只承担最轻的简报（一次文件读取），重的定时对齐 + git 补录扫描仍由它引导加载 skill 执行，避免每轮对话背上全套对账开销。
 
 **kanban-writeback.md（回写兜底）：**
 
@@ -74,19 +87,20 @@ skill 只在被唤起时生效，"随手开的对话"需要 always-on 规则兜�
 
 ## 定时捞任务（P2，链式续期）
 
-定时配置在看板 UI 的“⏰ 定时”表单里设置（执行时刻/开关/单轮上限，落盘 `~/.kanban/schedule.json`），UI 只记录意图；下一次对话的开场对账会读该配置并把 schedule MCP 定时任务对齐过去（缺则补排、时间变则更新、关则删除）。也可在对话中直接说"帮我创建看板定时任务"，prompt 用：
+定时配置在看板 UI 的“⏰ 定时”表单里设置（执行时刻/开关/单轮上限，落盘 `~/.kanban/schedule.json`），该文件是唯一事实源：**定时链每次触发时自读它完成对齐**，开关/时刻/上限变更都在下一次触发时生效，不依赖对话干预。唯一需要人工的是冷启动点火（普通对话调不了 schedule MCP，需经 Qoder 定时任务入口手动创建首个任务）：开场对账会只读 Qoder 本地定时存储检测链是否存活，断链时给出点火指引。首个定时任务的 prompt 用：
 
 ```
-循环执行 /kanban run（仅限 unattended: true 的任务）：每次完整处理一个任务
+先读 ~/.kanban/schedule.json：若 enabled 为 false，本轮直接结束（不执行不续期）。
+否则循环执行 /kanban run（仅限 unattended: true 的任务）：每次完整处理一个任务
 （转 doing → 执行 → 回写时间线 → 转 review）后再捞下一个，直到 todo 列没有
-unattended 任务或本轮已处理 N 个（N 取 ~/.kanban/schedule.json 的 max_per_run，
-读不到则 3；单轮上限，防止上下文膨胀）。执行完毕后，无论成败，读
-~/.kanban/schedule.json：若 enabled 为 false 则不再续期；否则调用 schedule MCP
-给自己创建下一次定时任务（次日 time 字段的时刻，读不到则 10:00，本段 prompt
-原样复制）。若 todo 列没有 unattended 任务，直接续期即可。
+unattended 任务或本轮已处理 N 个（N 取 schedule.json 的 max_per_run，读不到则 3；
+单轮上限，防止上下文膨胀）。执行完毕后，无论成败，调用 schedule MCP 给自己创建
+下一次定时任务：时刻取 schedule.json 的 time（次日，读不到则 10:00）；prompt 取
+kanban skill SKILL.md「定时执行」章节的最新模板（不要复制本段旧文，使模板升级
+能沿链传导）。若 todo 列没有 unattended 任务，直接续期即可。
 ```
 
-断链兜底：kanban skill 的开场对账负责对齐补排；server 内置 watchdog 在配置时刻过后 30 分钟仍无执行痕迹时发钉钉提醒（需已配置钉钉，每日至多一次）。开场对账同时负责补录扫描（git 近期改动文件与看板 files 索引取差集，发现漏写的改动提示补录）；成批的计划条目可用 /kanban plan 结构化落板（详见 SKILL.md）。
+断链兜底：kanban skill 的开场对账负责定时链检测与点火指引（Quest 会话内可直接补排）；server 内置 watchdog 在配置时刻过后 30 分钟仍无执行痕迹时发钉钉提醒（需已配置钉钉，每日至多一次）。开场对账同时负责补录扫描（git 近期改动文件与看板 files 索引取差集，发现漏写的改动提示补录）；成批的计划条目可用 /kanban plan 结构化落板（详见 SKILL.md）。
 
 ## 钉钉决策升级（P3，可选）
 
@@ -139,7 +153,7 @@ server/
 ├── dingtalk.py       # P3：Stream 客户端 + 单聊发送（config.json 存在时启用）
 └── web/index.html    # 看板 UI（零构建，能力见上节）
 skill/kanban/SKILL.md # kanban skill 源文件（install.sh 部署到 ~/.qoder/skills/kanban/）
-rules/                # 两条 always-on 规则源文件（install.sh 部署到 ~/.qoder/rules/）
+rules/                # 三条 always-on 规则源文件（install.sh 部署到 ~/.qoder/rules/）
 install.sh            # 一键安装：venv + 依赖 + skill/rules 部署 + MCP 配置打印
 templates/BOARD.md    # 空看板模板
 tests/test_kanban.py  # 状态机流转表逐格覆盖 + 存储层 + 钉钉回复容错

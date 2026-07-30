@@ -8,6 +8,9 @@ __pycache__/
 .pytest_cache/
 *.pyc
 
+# 构建产物（plugin zip 由 plugin/relay-kanban/ 目录按需重新打包）
+plugin/*.zip
+
 # OS
 .DS_Store
 Thumbs.db
