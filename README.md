@@ -134,6 +134,25 @@ backlog -> todo -> doing -> review -> done（归档至 archive/YYYY-MM/）
 
 状态机外的两个操作：`edit_task`（编辑元信息与描述，时间线不可改）、`discard_task`（废弃 = 软删除，reason 必填，写入时间线后归档，不经 review 验收）。直接归档（绕过验收的 done）故意不提供。
 
+## ACA 插件用户须知（从 ACA 市场安装时必看）
+
+通过 `qodercli plugin install relay-kanban@aone` 安装后，**Skills（kanban skill）和 MCP（9 个任务工具）会自动激活**，但 ACA 平台当前**不支持 `rules` 组件自动部署**——插件里的三条 always-on 规则不会落到你的机器上。没有它们插件能用（手动 `/kanban`、`/todo` 触发没问题），但以下三个"无感层"行为会失效：
+
+- **kanban-boot**：新对话首轮不会自动简报"当前 N 条待办、M 条待验收，要处理吗？"
+- **kanban-capture**：话题闭合时不会自动捕获未做的事项
+- **kanban-writeback**：对话中改了代码 / 做了技术决策后，不会自动回写到相关任务时间线
+
+**补装 rules（一次性，已装过的用户可跳过）**：
+
+```bash
+git clone https://code.alibaba-inc.com/lg-qingxingzhou/kanban-system.git
+cd kanban-system && ./install.sh --rules-only
+```
+
+`--rules-only` 只把三条 rule 文件复制到 `~/.qoder/rules/`，**不会**创建 venv、不会装依赖、不会部署 skill（避免与已装的插件版冲突）。已存在的 rule 文件不会被覆盖，保护本地修改。
+
+如果你走完整 `./install.sh`（不带参数），它会一次性部署 skill + rules + 数据目录 + 打印 MCP 注册配置——适合没用过 ACA 插件、想纯靠仓库本地安装的用户。
+
 ## 看板 UI
 
 零构建单文件（`server/web/index.html`，SortableJS 拖拽），与 MCP 同进程同数据源，30s 轮询保持与对话侧同步：
@@ -153,11 +172,11 @@ server/
 ├── dingtalk.py       # P3：Stream 客户端 + 单聊发送（config.json 存在时启用）
 └── web/index.html    # 看板 UI（零构建，能力见上节）
 skills/kanban/SKILL.md # kanban skill 源文件（install.sh 部署到 ~/.qoder/skills/kanban/；也是插件的 skills 组件）
-rules/                # 三条 always-on 规则源文件（install.sh 部署到 ~/.qoder/rules/；也是插件的 rules 组件）
+rules/                # 三条 always-on 规则源文件（install.sh --rules-only 单独部署；ACA 插件当前不支持 rules 组件自动部署，详见上方 "ACA 插件用户须知"）
 .qoder-plugin/plugin.json # 标准 Plugin 清单（仓库根目录即插件根，声明 skills/rules/mcpServers）
 mcp.json              # 插件 MCP 配置（含 <KANBAN_REPO> 占位路径，安装说明见 CONNECTORS.md）
 CONNECTORS.md         # 插件使用者的 MCP 服务端安装与连接说明
-install.sh            # 一键安装：venv + 依赖 + skill/rules 部署 + MCP 配置打印
+install.sh            # 一键安装：venv + 依赖 + skill/rules 部署 + MCP 配置打印；--rules-only 仅部署 rules（ACA 插件用户补装用）
 templates/BOARD.md    # 空看板模板
 tests/test_kanban.py  # 状态机流转表逐格覆盖 + 存储层 + 钉钉回复容错
 ```
