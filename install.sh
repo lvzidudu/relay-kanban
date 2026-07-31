@@ -110,7 +110,7 @@ EOF
   fi
 fi
 
-# ---------- 6. 打印 MCP 注册配置 ----------
+# ---------- 6. 注册 MCP（自动写入 ~/.qoder/mcp.json，已存在则合并） ----------
 if [ "$RULES_ONLY" = true ]; then
   echo ""
   echo "✅ --rules-only 部署完成：三条 always-on rules 已就位于 $QODER_DIR/rules/"
@@ -118,8 +118,29 @@ if [ "$RULES_ONLY" = true ]; then
   exit 0
 fi
 
+MCP_JSON="$QODER_DIR/mcp.json"
+if [ -f "$MCP_JSON" ]; then
+  cp "$MCP_JSON" "$MCP_JSON.bak.$(date +%s)"
+fi
+"$VENV_DIR/bin/python" - "$MCP_JSON" "$VENV_DIR/bin/python" "$REPO_DIR" <<'PYEOF'
+import json, sys, pathlib
+path, py, repo = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+path.parent.mkdir(parents=True, exist_ok=True)
+data = {}
+if path.exists():
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        print(f"⚠️  {path} 已存在但不是合法 JSON，已备份，将重新生成")
+data.setdefault("mcpServers", {})["kanban"] = {
+    "command": py, "args": ["-m", "server.main"], "cwd": repo,
+}
+path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+print(f"✅ kanban MCP 已注册到 {path}（已存在的其他 server 保留不动）")
+PYEOF
+
 echo ""
-echo "🎉 安装完成！最后一步：手动注册 MCP 服务（Qoder 设置 → MCP → 添加），配置如下："
+echo "🎉 安装完成！agent 会话（含 Quest）读 ~/.qoder/mcp.json，已自动生效；若 IDE 设置界面未显示，可手动再添加一次（Qoder 设置 → MCP），配置如下："
 echo ""
 cat <<EOF
 {

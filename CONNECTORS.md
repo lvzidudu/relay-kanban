@@ -1,20 +1,29 @@
 # Relay 任务看板：安装与连接说明
 
-本插件包含 skill（/kanban 工作流）与三条 always-on 规则，装完即生效；但 **kanban MCP 服务是本地 stdio Python 进程，需要额外一次本地安装**，否则 skill 会自动降级到 HTTP API / 直接文件读写。
+本插件只包含"声明层"（skill + mcp 配置）。**完整体验（MCP 工具 + 看板 UI + always-on 规则）需要再执行一次仓库的 install.sh**，全自动、无需人工介入，可直接交给 agent 执行。
 
-## 1. 安装 MCP 服务端（一次性）
+## 一条命令装齐全部（推荐）
 
 要求 Python >= 3.10（或已安装 [uv](https://github.com/astral-sh/uv)）：
 
 ```bash
-git clone https://code.alibaba-inc.com/lg-qingxingzhou/kanban-system.git && cd kanban-system
-./install.sh            # 建 venv + 装依赖 + 初始化 ~/.kanban/
-./install.sh --launchd  # 可选：把 Web UI 注册为 macOS 开机常驻服务
+git clone https://code.alibaba-inc.com/lg-qingxingzhou/kanban-system.git && cd kanban-system && ./install.sh
 ```
 
-## 2. 填写 mcp.json 真实路径
+install.sh 自动完成：建 venv → 装依赖 → 部署 skill + 三条 always-on rules 到 ~/.qoder/ → 初始化 ~/.kanban/ → **把 kanban MCP 自动写入 ~/.qoder/mcp.json**（已有内容则合并，先备份；无需手动填路径）。
 
-插件内 `mcp.json` 使用了占位符 `<KANBAN_REPO>`，需替换为你机器上 kanban-system 仓库的**绝对路径**（`install.sh` 结尾会打印带真实路径的完整配置）：
+可选：`./install.sh --launchd` 额外把看板 Web UI 注册为 macOS 开机常驻服务。
+
+## 装完验证（agent 可逐条自检）
+
+1. `cat ~/.qoder/mcp.json` → 含 `"kanban"` 条目，command 指向仓库 `.venv/bin/python`
+2. `ls ~/.qoder/rules/` → 含 kanban-boot.md / kanban-capture.md / kanban-writeback.md
+3. 新对话输入 `/kanban` → 可调 MCP 工具：`add_task` / `list_tasks` / `get_task` / `update_status` / `append_task_log` / `edit_task` / `discard_task` / `request_decision` / `wait_for_decision`
+4. MCP 启动时同进程在 7654 端口拉起看板 Web UI（http://localhost:7654）
+
+## mcp.json 占位说明（仅手动配置时需要管）
+
+插件内的 `mcp.json` 模板用了占位符 `<KANBAN_REPO>`——**走上面的 install.sh 会自动写入真实路径，不需要手动处理**。只有你坚持手动配置时才需要把它替换为仓库绝对路径：
 
 ```json
 {
@@ -28,9 +37,7 @@ git clone https://code.alibaba-inc.com/lg-qingxingzhou/kanban-system.git && cd k
 }
 ```
 
-注册后可用工具：`add_task` / `list_tasks` / `get_task` / `update_status` / `append_task_log` / `edit_task` / `discard_task` / `request_decision` / `wait_for_decision`。MCP 启动时会同进程在 7654 端口拉起看板 Web UI（http://localhost:7654）。
-
-## 3. 可选能力
+## 可选能力
 
 - **钉钉决策升级**：无人执行遇决策点时发钉钉单聊。需自行创建钉钉企业内部应用（Stream 模式机器人），将 AppKey / AppSecret / userId 写入 `~/.kanban/config.json`（勿提交到任何 git 仓库），并安装 `dingtalk-stream requests`。详见仓库 README。
 - **定时无人执行**：在看板 UI 的“⏰ 定时”表单配置，落盘 `~/.kanban/schedule.json`；首次点火需经 Qoder 定时任务入口手动创建（skill 的开场对账会给出指引）。

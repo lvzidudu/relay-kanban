@@ -136,22 +136,33 @@ backlog -> todo -> doing -> review -> done（归档至 archive/YYYY-MM/）
 
 ## ACA 插件用户须知（从 ACA 市场安装时必看）
 
-通过 `qodercli plugin install relay-kanban@aone` 安装后，**Skills（kanban skill）和 MCP（9 个任务工具）会自动激活**，但 ACA 平台当前**不支持 `rules` 组件自动部署**——插件里的三条 always-on 规则不会落到你的机器上。没有它们插件能用（手动 `/kanban`、`/todo` 触发没问题），但以下三个"无感层"行为会失效：
+`qodercli plugin install relay-kanban@aone` 只能拿到插件的"声明层"（skill + mcp 配置），**完整体验需要再跑一次本仓库的 install.sh**。能力分层如下：
 
-- **kanban-boot**：新对话首轮不会自动简报"当前 N 条待办、M 条待验收，要处理吗？"
-- **kanban-capture**：话题闭合时不会自动捕获未做的事项
-- **kanban-writeback**：对话中改了代码 / 做了技术决策后，不会自动回写到相关任务时间线
+| 能力 | 仅装插件 | 插件 + install.sh |
+|---|---|---|
+| `/kanban` `/todo` 对话命令（skill） | ✅ | ✅ |
+| 9 个 MCP 任务工具（add_task / list_tasks 等） | ❌ 无服务端，skill 降级到直接读写 ~/.kanban/ 文件 | ✅ |
+| 看板 Web UI（http://localhost:7654 拖拽验收） | ❌ | ✅ |
+| 三条 always-on 规则（开场简报/话题捕获/改动回写） | ❌ ACA 不支持 rules 组件 | ✅ |
+| 钉钉决策升级 / 定时无人执行 | ❌ | ✅（钉钉需额外配置，见下方章节） |
 
-**补装 rules（一次性，已装过的用户可跳过）**：
+**补齐完整体验（一次性，可直接交给 agent 执行）**：
 
 ```bash
 git clone https://code.alibaba-inc.com/lg-qingxingzhou/kanban-system.git
-cd kanban-system && ./install.sh --rules-only
+cd kanban-system && ./install.sh
 ```
 
-`--rules-only` 只把三条 rule 文件复制到 `~/.qoder/rules/`，**不会**创建 venv、不会装依赖、不会部署 skill（避免与已装的插件版冲突）。已存在的 rule 文件不会被覆盖，保护本地修改。
+install.sh 会自动完成全部步骤，**无需人工介入**：建 venv（优先 uv，否则系统 Python ≥ 3.10）→ 装依赖 → 部署 skill + rules 到 ~/.qoder/ → 初始化 ~/.kanban/ 数据目录 → **把 kanban MCP 自动注册进 ~/.qoder/mcp.json**（已有内容则合并，先备份）。
 
-如果你走完整 `./install.sh`（不带参数），它会一次性部署 skill + rules + 数据目录 + 打印 MCP 注册配置——适合没用过 ACA 插件、想纯靠仓库本地安装的用户。
+装完验证（agent 可逐条自检）：
+
+1. `cat ~/.qoder/mcp.json` → 应含 `"kanban"` 条目（command 指向仓库 .venv）
+2. `ls ~/.qoder/rules/` → 应含 kanban-boot.md / kanban-capture.md / kanban-writeback.md
+3. 新开对话输入 `/kanban` → skill 被触发，MCP 工具可调（首次调用时 MCP 进程自动拉起，同时在 7654 端口起看板 UI）
+4. 浏览器开 http://localhost:7654 → 看到看板列（若未启动，跑 `.venv/bin/python -m server.main --web-only` 或用 `./install.sh --launchd` 注册常驻）
+
+已装过插件会不会冲突？不会——skill 文件同名覆盖（内容一致），rule 已存在则跳过不覆盖，mcp.json 只新增/更新 kanban 一个条目。只想补 rules 不想动其他（比如 MCP 已手动配好），用 `./install.sh --rules-only`。
 
 ## 看板 UI
 
