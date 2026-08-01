@@ -15,6 +15,7 @@ description: Relay：独立于工作区的本地任务看板（~/.kanban/），�
    - `POST /api/tasks` 建任务（body: title/description/status/priority/unattended/workspace/files/tags）
    - `PATCH /api/tasks/{id}` 状态流转（body: status/note）；`PUT /api/tasks/{id}` 编辑
    - `POST /api/tasks/{id}/log` 追加时间线（body: entry/source）；`POST /api/tasks/{id}/discard` 废弃（body: reason）
+   - `POST /api/tasks/{id}/decision` 决策升级（body: question/options）：等价于 MCP request_decision，转 waiting_decision + 发钉钉卡片
    - `GET /api/schedule` 读定时配置；`PUT /api/schedule` 写（body: enabled/time/max_per_run）
 3. **直接文件读写**（仅当 7654 也不可达时）：需自行遵守下方状态机并重新生成 BOARD.md
 
@@ -73,7 +74,7 @@ updated: 2026-07-28
 3. 执行任务（workspace 字段指向的仓库）
 4. 执行中每个关键决策/阶段改动**当场**追加时间线，并把新触碰的文件补进 files
 5. 结束：汇总本轮改动与遗留写入时间线 → 转 review
-6. 执行中遇到需用户拍板的问题：人在场直接问；无人场景调用 request_decision（不可用则写遗留后转回 todo）
+6. **决策点硬性规则**：执行中遇到需用户拍板的问题时，**必须先调用 request_decision 再向用户提问**（MCP 可用时调 request_decision 工具；不可用时 `curl -X POST http://localhost:7654/api/tasks/{id}/decision -d '{"question":"...","options":[...]}'`），任务流转为 waiting_decision 后再使用 AskUserQuestion 或直接提问。这样即使无人值守也能通过钉钉通知触达用户。**严禁**在任务处于 doing 状态时直接使用 AskUserQuestion 而不先做决策升级。若 request_decision 完全不可用（MCP 和 HTTP 均失败），将问题写入时间线标记为遗留，转回 todo。
 
 ### /kanban plan [计划来源]
 计划落板：将 plan 产物（本对话生成的 spec 文件，或用户指定的计划文档）中的未执行条目结构化写入看板：
@@ -131,4 +132,4 @@ kanban skill SKILL.md「定时执行」章节的最新模板（不要复制本�
 
 ## 决策升级（P3，钉钉）
 
-无人执行遇决策点时调用 request_decision(task_id, question, options)：任务转 waiting_decision、发钉钉卡片、本轮正常结束。需要秒级往返时可用 wait_for_decision(task_id, timeout_sec)，超时自动降级为异步。用户在钉钉的回复由 MCP 服务写回时间线并将任务退回 todo，下次捞任务时带决策继续。
+无人执行遇决策点时调用 request_decision(task_id, question, options)：任务转 waiting_decision、发钉钉卡片、本轮正常结束。MCP 不可用时降级为 HTTP：`POST /api/tasks/{id}/decision`（body: question/options），效果相同。需要秒级往返时可用 wait_for_decision(task_id, timeout_sec)，超时自动降级为异步。用户在钉钉的回复由 MCP 服务写回时间线并将任务退回 todo，下次捞任务时带决策继续。

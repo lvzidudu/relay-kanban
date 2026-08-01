@@ -250,6 +250,27 @@ async def api_discard_task(request: Request):
     return JSONResponse(result)
 
 
+async def api_request_decision(request: Request):
+    """HTTP 降级路径：等价于 MCP request_decision 工具。
+    任务转 waiting_decision + 发钉钉决策卡片。"""
+    body = await request.json()
+    task_id = request.path_params["task_id"]
+    question = body.get("question", "")
+    options = body.get("options") or []
+    if not question:
+        return JSONResponse({"error": "question 必填"}, status_code=400)
+    pq = {"question": question, "options": options}
+    try:
+        storage.update_status(task_id, "waiting_decision", pending_question=pq)
+    except storage.TaskNotFound as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+    except TransitionError as e:
+        return JSONResponse({"error": str(e)}, status_code=422)
+    sent = dingtalk.send_decision_card(task_id, question, options)
+    return JSONResponse({"id": task_id, "status": "waiting_decision",
+                         "dingtalk_sent": sent})
+
+
 async def api_append_log(request: Request):
     body = await request.json()
     if not body.get("entry"):
@@ -287,6 +308,7 @@ app = Starlette(routes=[
     Route("/api/tasks/{task_id}", api_get_task, methods=["GET"]),
     Route("/api/tasks/{task_id}", api_patch_task, methods=["PATCH"]),
     Route("/api/tasks/{task_id}", api_edit_task, methods=["PUT"]),
+    Route("/api/tasks/{task_id}/decision", api_request_decision, methods=["POST"]),
     Route("/api/tasks/{task_id}/discard", api_discard_task, methods=["POST"]),
     Route("/api/tasks/{task_id}/log", api_append_log, methods=["POST"]),
 ])
