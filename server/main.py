@@ -113,6 +113,18 @@ def append_task_log(task_id: str, entry: str, source: str = "对话") -> str:
 
 
 @mcp.tool()
+def update_summary(task_id: str, summary: str) -> str:
+    """覆盖式重写任务的 Summary 区块：每轮执行结束（含退回/验收）后必须调用，
+    将关键结论/技术决策/当前进度/遗留压缩到 20 行内，控制后续捞任务的上下文体积。
+    时间线不受影响（只追加作审计）。"""
+    try:
+        result = storage.update_summary(task_id, summary)
+    except (storage.TaskNotFound, ValueError) as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
+    return json.dumps(result, ensure_ascii=False)
+
+
+@mcp.tool()
 def edit_task(task_id: str, title: str = "", description: str = "",
               priority: str = "", unattended: bool | None = None,
               workspace: str | None = None, files: list[str] | None = None,
@@ -291,6 +303,20 @@ async def api_append_log(request: Request):
     return JSONResponse(result)
 
 
+async def api_update_summary(request: Request):
+    """覆盖式重写 Summary 区块（body: summary，空字符串视为清空）。"""
+    body = await request.json()
+    if "summary" not in body:
+        return JSONResponse({"error": "summary 必填"}, status_code=400)
+    try:
+        result = storage.update_summary(request.path_params["task_id"], body["summary"])
+    except storage.TaskNotFound as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse(result)
+
+
 async def api_get_schedule(request: Request):
     return JSONResponse(storage.get_schedule())
 
@@ -319,6 +345,7 @@ app = Starlette(routes=[
     Route("/api/tasks/{task_id}/decision", api_request_decision, methods=["POST"]),
     Route("/api/tasks/{task_id}/discard", api_discard_task, methods=["POST"]),
     Route("/api/tasks/{task_id}/log", api_append_log, methods=["POST"]),
+    Route("/api/tasks/{task_id}/summary", api_update_summary, methods=["POST"]),
 ])
 
 

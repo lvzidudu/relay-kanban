@@ -1,6 +1,8 @@
 """存储层：任务文件读写、ID 分配、BOARD.md 生成、归档。
 
-任务文件 = frontmatter(YAML) + 正文（## 任务描述 / ## 时间线）。
+任务文件 = frontmatter(YAML) + 正文（## 任务描述 / ## Summary / ## 时间线）。
+Summary 为覆盖式压缩区块（agent 执行结束后重写，控制读取上下文）；
+时间线只追加作审计日志。兼容无 Summary 区块的旧格式任务文件。
 不引入 python-frontmatter 之外的重依赖；文件即数据库，BOARD.md 每次变更后全量重建。
 """
 from __future__ import annotations
@@ -104,6 +106,30 @@ def _now_stamp() -> str:
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
+SUMMARY_HEADING = "## Summary"
+
+
+def _split_sections(content: str) -> tuple[str, str | None, str]:
+    """拆分正文为 (任务描述, Summary, 时间线原文)。兼容无 Summary 区块的旧格式：
+    此时 Summary 返回 None。时间线原文含标题，缺失时返回空标题。"""
+    tl_idx = content.find("## 时间线")
+    timeline = content[tl_idx:] if tl_idx >= 0 else "## 时间线\n"
+    head = content[:tl_idx] if tl_idx >= 0 else content
+    sm_idx = head.find(SUMMARY_HEADING)
+    if sm_idx >= 0:
+        summary = head[sm_idx + len(SUMMARY_HEADING):].strip() or None
+        head = head[:sm_idx]
+    else:
+        summary = None
+    desc = head.replace("## 任务描述", "").strip()
+    return desc, summary, timeline
+
+
+def _render_content(desc: str, summary: str | None, timeline: str) -> str:
+    summary_block = f"{SUMMARY_HEADING}\n\n{summary.strip()}\n\n" if summary else ""
+    return f"## 任务描述\n\n{desc.strip()}\n\n{summary_block}{timeline}"
+
+
 # ---------- 查询 ----------
 
 def list_tasks(status: str | None = None, keyword: str | None = None,
@@ -144,6 +170,7 @@ def list_tasks(status: str | None = None, keyword: str | None = None,
             "tags": meta.get("tags") or [],
             "created": str(meta.get("created", "")),
             "updated": str(meta.get("updated", "")),
+            "summary": _split_sections(post.content)[1],
             "content": post.content,
         })
     result.sort(key=lambda t: (PRIORITY_ORDER.get(t["priority"], 1), t["created"], t["id"]))
@@ -173,6 +200,7 @@ def get_task(task_id: str) -> dict:
         "pending_question": meta.get("pending_question"),
         "created": str(meta.get("created", "")),
         "updated": str(meta.get("updated", "")),
+        "summary": _split_sections(post.content)[1],
         "content": post.content,
     }
 
@@ -204,7 +232,7 @@ def add_task(title: str, description: str, status: str = "todo",
         meta["files"] = files
     if tags:
         meta["tags"] = tags
-    content = f"## 任务描述\n\n{description.strip()}\n\n## 时间线\n"
+    content = f"## 任务描述\n\n{description.strip()}\n\n{SUMMARY_HEADING}\n\n## 时间线\n"
     post = frontmatter.Post(content, **meta)
     _dump(post, TASKS_DIR / f"{task_id}-{_safe_title(title)}.md")
     rebuild_board()
@@ -251,6 +279,21 @@ def append_task_log(task_id: str, entry: str, source: str = "对话") -> dict:
     return {"id": task_id, "appended": True}
 
 
+def update_summary(task_id: str, summary: str) -> dict:
+    """覆盖式重写 Summary 区块（agent 每轮执行结束后压缩关键结论回写，建议 20 行内）。
+    任务描述与时间线原样保留；空内容视为清空 Summary。"""
+    if summary is None:
+        raise ValueError("summary 不能为 None（清空请传空字符串）")
+    path = _task_path(task_id)
+    post = _load(path)
+    desc, _, timeline = _split_sections(post.content)
+    post.content = _render_content(desc, summary.strip() or None, timeline)
+    post.metadata["updated"] = _now_date()
+    _dump(post, path)
+    _index_upsert(task_id)
+    return {"id": task_id, "updated": True}
+
+
 def edit_task(task_id: str, title: str | None = None, description: str | None = None,
               priority: str | None = None, unattended: bool | None = None,
               workspace: str | None = None, files: list[str] | None = None,
@@ -276,10 +319,9 @@ def edit_task(task_id: str, title: str | None = None, description: str | None = 
     if tags is not None:
         post.metadata["tags"] = tags
     if description is not None:
-        # 只替换「## 任务描述」分区，时间线原样保留
-        idx = post.content.find("## 时间线")
-        timeline = post.content[idx:] if idx >= 0 else "## 时间线\n"
-        post.content = f"## 任务描述\n\n{description.strip()}\n\n{timeline}"
+        # 只替换「## 任务描述」分区，Summary 与时间线原样保留
+        _, summary, timeline = _split_sections(post.content)
+        post.content = _render_content(description, summary, timeline)
     post.metadata["updated"] = _now_date()
     # 标题变更时同步重命名文件，保持文件名可读
     new_path = TASKS_DIR / f"{task_id}-{_safe_title(post.metadata['title'])}.md"

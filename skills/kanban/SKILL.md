@@ -9,12 +9,12 @@ description: Relay：独立于工作区的本地任务看板（~/.kanban/），�
 
 操作方式按优先级降级（Quest 等会话不加载用户注册的 MCP，降级是常态而非异常）：
 
-1. **kanban MCP 工具**（add_task / list_tasks / get_task / update_status / append_task_log / edit_task / discard_task）
+1. **kanban MCP 工具**（add_task / list_tasks / get_task / update_status / append_task_log / update_summary / edit_task / discard_task）
 2. **HTTP API**（MCP 不可用时首选）：服务常驻 http://localhost:7654 ，用 curl 调用，状态机由服务端校验，BOARD.md 自动重建：
    - `GET /api/tasks?status=&keyword=&file_path=&include_archived=` 列任务（include_archived=1 时含归档）；`GET /api/tasks/{id}` 读全文（归档任务也可读，只读不可写）
    - `POST /api/tasks` 建任务（body: title/description/status/priority/unattended/workspace/files/tags）
    - `PATCH /api/tasks/{id}` 状态流转（body: status/note）；`PUT /api/tasks/{id}` 编辑
-   - `POST /api/tasks/{id}/log` 追加时间线（body: entry/source）；`POST /api/tasks/{id}/discard` 废弃（body: reason）
+   - `POST /api/tasks/{id}/log` 追加时间线（body: entry/source）；`POST /api/tasks/{id}/summary` 覆盖式重写 Summary（body: summary）；`POST /api/tasks/{id}/discard` 废弃（body: reason）
    - `POST /api/tasks/{id}/decision` 决策升级（body: question/options）：等价于 MCP request_decision，转 waiting_decision + 发钉钉决策消息
    - `GET /api/schedule` 读定时配置；`PUT /api/schedule` 写（body: enabled/time/max_per_run）
 3. **直接文件读写**（仅当 7654 也不可达时）：需自行遵守下方状态机并重新生成 BOARD.md
@@ -38,10 +38,11 @@ updated: 2026-07-28
 ---
 ```
 
-正文两个固定分区：
+正文三个固定分区：
 
 - `## 任务描述`：做什么 + 验收标准
-- `## 时间线`：**只追加，不修改**。每条格式 `### YYYY-MM-DD HH:mm 来源`，内容分三类条目：决策（含理由）、改动（文件 + 摘要）、遗留（未尽事项，重要遗留应另建任务）
+- `## Summary`：**覆盖式压缩区块**。agent 每轮执行结束后重写，内容：关键结论、技术决策、当前进度、遗留问题，建议 20 行内。捞任务恢复上下文时优先读它，控制上下文体积；旧任务可能没有此区块，兼容读取即可
+- `## 时间线`：**只追加，不修改**，作审计日志。每条格式 `### YYYY-MM-DD HH:mm 来源`，内容分三类条目：决策（含理由）、改动（文件 + 摘要）、遗留（未尽事项，重要遗留应另建任务）
 
 ## 状态机（必须严格遵守）
 
@@ -70,10 +71,10 @@ updated: 2026-07-28
 捞任务执行：
 
 1. 无 id 时取 todo 列 priority 最高、最早创建的任务（定时无人场景只取 unattended: true 的）
-2. 转 doing → 读任务文件全文恢复上下文（时间线里有历史决策与验收反馈）
+2. 转 doing → 读任务文件恢复上下文：**优先读 frontmatter + 任务描述 + Summary**（摘要字段 summary 即压缩结论）；需要翻历史细节（上次为什么这么改/验收反馈）时再读时间线全文
 3. 执行任务（workspace 字段指向的仓库）
 4. 执行中每个关键决策/阶段改动**当场**追加时间线，并把新触碰的文件补进 files
-5. 结束：汇总本轮改动与遗留写入时间线 → 转 review
+5. 结束：汇总本轮改动与遗留写入时间线 → **调用 update_summary 覆盖式压缩回写**（关键结论/技术决策/当前进度/遗留，20 行内）→ 转 review
 6. **决策点硬性规则**：执行中遇到需用户拍板的问题时，**必须先调用 request_decision 再向用户提问**（MCP 可用时调 request_decision 工具；不可用时 `curl -X POST http://localhost:7654/api/tasks/{id}/decision -d '{"question":"...","options":[...]}'`），任务流转为 waiting_decision 后再使用 AskUserQuestion 或直接提问。这样即使无人值守也能通过钉钉通知触达用户。**严禁**在任务处于 doing 状态时直接使用 AskUserQuestion 而不先做决策升级。若 request_decision 完全不可用（MCP 和 HTTP 均失败），将问题写入时间线标记为遗留，转回 todo。
 
 ### /kanban plan [计划来源]
@@ -104,9 +105,9 @@ updated: 2026-07-28
 
 ## 四个强制写入时机
 
-1. 任务开始执行时：绑定任务 ID，读时间线
+1. 任务开始执行时：绑定任务 ID，优先读 Summary，必要时再读时间线
 2. 关键决策/阶段改动后：当场追加，不攒到最后
-3. 本轮执行结束时：汇总改动 + 遗留
+3. 本轮执行结束时：汇总改动 + 遗留写时间线，并 update_summary 压缩回写
 4. 任何对话收尾时：本次对话若触碰了某任务 files/主题覆盖的内容，必须回写该任务时间线（用 list_tasks 按 file_path 或 keyword 反查）
 
 ## 定时执行（P2，链式续期）

@@ -67,11 +67,12 @@ def _meta_path():
 # ---------- 文本提取 ----------
 
 def _task_to_text(task: dict) -> str:
-    """标题 + 标签 + 任务描述区块（不含时间线）拼接为 embedding 输入。"""
+    """标题 + 标签 + 任务描述与 Summary 区块（不含时间线）拼接为 embedding 输入。
+    Summary 是 agent 压缩的执行结论，纳入后历史决策也可被语义检索命中。"""
     content = task.get("content") or ""
     idx = content.find("## 时间线")
     desc = content[:idx] if idx >= 0 else content
-    desc = desc.replace("## 任务描述", "").strip()
+    desc = desc.replace("## 任务描述", "").replace("## Summary", "").strip()
     parts = [
         str(task.get("title") or ""),
         " ".join(str(t) for t in (task.get("tags") or [])),

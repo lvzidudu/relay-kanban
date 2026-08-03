@@ -159,6 +159,49 @@ def test_edit_task(kanban_home):
         storage.edit_task(tid, priority="urgent")
 
 
+# ---------- Summary 区块（T020：覆盖式压缩，控制捞任务上下文） ----------
+
+def test_summary_lifecycle(kanban_home):
+    tid = storage.add_task("任务", "描述")
+    t = storage.get_task(tid)
+    # 新任务自带空 Summary 区块
+    assert "## Summary" in t["content"] and t["summary"] is None
+    storage.append_task_log(tid, "- 历史时间线一条")
+    # 覆盖式回写：summary 可读，描述与时间线不受影响
+    storage.update_summary(tid, "- 决策：改用 JWT\n- 进度：50%")
+    t = storage.get_task(tid)
+    assert t["summary"] == "- 决策：改用 JWT\n- 进度：50%"
+    assert "描述" in t["content"] and "历史时间线一条" in t["content"]
+    # 再次覆盖：旧 summary 被替换，时间线仍不受影响
+    storage.update_summary(tid, "- 新结论")
+    t = storage.get_task(tid)
+    assert t["summary"] == "- 新结论" and "改用 JWT" not in t["content"]
+    assert "历史时间线一条" in t["content"]
+    # 空字符串清空
+    storage.update_summary(tid, "")
+    assert storage.get_task(tid)["summary"] is None
+
+
+def test_summary_legacy_file_compat(kanban_home):
+    # 旧格式（无 Summary 区块）能正常解析，回写后升级为三段式
+    tid = storage.add_task("旧任务", "旧描述")
+    path = next((kanban_home / "tasks").glob("T001-*.md"))
+    path.write_text(path.read_text().replace("## Summary\n\n", ""), encoding="utf-8")
+    t = storage.get_task(tid)
+    assert t["summary"] is None and "旧描述" in t["content"]
+    storage.update_summary(tid, "补写的结论")
+    t = storage.get_task(tid)
+    assert t["summary"] == "补写的结论" and "旧描述" in t["content"]
+
+
+def test_edit_task_keeps_summary(kanban_home):
+    tid = storage.add_task("任务", "描述")
+    storage.update_summary(tid, "摘要内容")
+    storage.edit_task(tid, description="新描述")
+    t = storage.get_task(tid)
+    assert t["summary"] == "摘要内容" and "新描述" in t["content"]
+
+
 def test_discard_task(kanban_home):
     tid = storage.add_task("不要了的任务", "x")
     # 无原因拒绝
@@ -305,6 +348,15 @@ def embed_env(kanban_home, monkeypatch):
 
     monkeypatch.setattr(embedding, "_encode", fake_encode)
     return np
+
+
+def test_task_to_text_includes_summary():
+    # Summary（执行结论）纳入 embedding 输入，时间线仍排除
+    task = {"title": "T", "tags": [], "content":
+            "## 任务描述\n\ndesc\n\n## Summary\n\n重要结论XYZ\n\n## 时间线\n\n噪声内容"}
+    text = embedding._task_to_text(task)
+    assert "重要结论XYZ" in text and "噪声内容" not in text
+    assert "## Summary" not in text
 
 
 def test_semantic_search_returns_results(embed_env):
