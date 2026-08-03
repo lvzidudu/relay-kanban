@@ -1,7 +1,7 @@
 {
   "name": "relay-kanban",
   "displayName": "Relay 任务看板",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Local task kanban independent of workspaces: aggregate cross-conversation context by feature, with MCP tools, always-on rules and a /kanban workflow skill.",
   "descriptionZh": "独立于工作区的本地任务看板（~/.kanban/），按功能维度聚合跨对话上下文：MCP 工具 + always-on 规则 + /kanban 工作流 skill。",
   "author": { "name": "zhangshuo" },

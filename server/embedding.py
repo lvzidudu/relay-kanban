@@ -5,8 +5,9 @@
   所有入口静默降级（返回空结果 / no-op），绝不向调用方抛异常
 - 索引持久化到 ~/.kanban/index/（vectors.npy + meta.json），增量更新，
   服务重启后直接从文件加载
-- 只索引活跃任务：done/discard 时从索引移除（与 storage 写入点挂钩保持一致，
-  重建时也只遍历 tasks/，避免重启后归档任务"复活"进索引）
+- 归档任务保留在索引中（done/discard 时打 archived 标记而非物理删除），
+  默认检索只命中活跃任务，include_archived=True 时才包含归档；
+  重建时遍历 tasks/ + archive/，归档任务按状态自动打标
 """
 from __future__ import annotations
 
@@ -26,7 +27,9 @@ _HAS_ST = importlib.util.find_spec("sentence_transformers") is not None
 
 from . import storage
 
-MODEL_NAME = "all-MiniLM-L6-v2"
+MODEL_NAME = "BAAI/bge-small-zh-v1.5"
+# bge 系列模型检索场景的 query 侧指令前缀（文档侧不加）
+QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
 _model = None
 
 
@@ -94,7 +97,7 @@ def _load_index():
     return vectors, meta
 
 
-def _save_index(vectors, task_ids: list[str]) -> None:
+def _save_index(vectors, task_ids: list[str], archived_ids: list[str] | None = None) -> None:
     _index_dir().mkdir(parents=True, exist_ok=True)
     np.save(_vectors_path(), np.asarray(vectors, dtype=np.float32))
     meta = {
@@ -102,6 +105,7 @@ def _save_index(vectors, task_ids: list[str]) -> None:
         "updated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "task_ids": list(task_ids),
         "row_map": {tid: i for i, tid in enumerate(task_ids)},
+        "archived_ids": sorted(set(archived_ids or []) & set(task_ids)),
     }
     _meta_path().write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
                             encoding="utf-8")
@@ -110,19 +114,20 @@ def _save_index(vectors, task_ids: list[str]) -> None:
 # ---------- 对外接口 ----------
 
 def build_index(tasks: list[dict]) -> None:
-    """全量重建索引。"""
+    """全量重建索引（含归档任务，status 为 done/discarded 的自动打 archived 标）。"""
     if not _available():
         return
     task_ids = [t["id"] for t in tasks]
+    archived_ids = [t["id"] for t in tasks if t.get("status") in ("done", "discarded")]
     if task_ids:
         vectors = _encode([_task_to_text(t) for t in tasks])
     else:
         vectors = np.zeros((0, 0), dtype=np.float32)
-    _save_index(vectors, task_ids)
+    _save_index(vectors, task_ids, archived_ids)
 
 
 def ensure_index() -> None:
-    """启动时调用：索引存在且模型匹配则跳过，否则从活跃任务全量重建。
+    """启动时调用：索引存在且模型匹配则跳过，否则从全部任务（含归档）全量重建。
     任何异常自行吞掉，不影响服务启动。"""
     if not _available():
         return
@@ -130,7 +135,7 @@ def ensure_index() -> None:
         vectors, meta = _load_index()
         if vectors is not None:
             return
-        build_index(storage.list_tasks())
+        build_index(storage.list_tasks(include_archived=True))
     except Exception:
         pass
 
@@ -141,7 +146,7 @@ def upsert_task(task: dict) -> None:
         return
     vectors, meta = _load_index()
     if vectors is None:
-        build_index(storage.list_tasks())
+        build_index(storage.list_tasks(include_archived=True))
         return
     vec = _encode([_task_to_text(task)])
     task_ids = list(meta["task_ids"])
@@ -154,11 +159,25 @@ def upsert_task(task: dict) -> None:
     else:
         vectors = np.vstack([vectors, vec])
         task_ids.append(task["id"])
-    _save_index(vectors, task_ids)
+    _save_index(vectors, task_ids, meta.get("archived_ids"))
+
+
+def mark_archived(task_id: str) -> None:
+    """打 archived 标记（done 归档 / 废弃时调用）：向量保留，默认检索不再命中。"""
+    if not _HAS_NP:
+        return
+    vectors, meta = _load_index()
+    if vectors is None:
+        return
+    if meta["row_map"].get(task_id) is None:
+        return
+    archived = set(meta.get("archived_ids") or [])
+    archived.add(task_id)
+    _save_index(vectors, meta["task_ids"], sorted(archived))
 
 
 def remove_task(task_id: str) -> None:
-    """从索引移除任务（done 归档 / 废弃时调用）。仅需 numpy。"""
+    """从索引物理移除任务（保留给归档清理等场景）。仅需 numpy。"""
     if not _HAS_NP:
         return
     vectors, meta = _load_index()
@@ -169,20 +188,24 @@ def remove_task(task_id: str) -> None:
         return
     vectors = np.delete(vectors, row, axis=0)
     task_ids = [t for t in meta["task_ids"] if t != task_id]
-    _save_index(vectors, task_ids)
+    _save_index(vectors, task_ids, meta.get("archived_ids"))
 
 
-def semantic_search(query: str, limit: int = 5) -> list[dict]:
+def semantic_search(query: str, limit: int = 5,
+                    include_archived: bool = False) -> list[dict]:
     """语义检索：返回 [{"id", "score"}]，按 cosine 相似度降序。
+    默认只命中活跃任务；include_archived=True 时归档任务也参与。
     索引不可用/为空时返回空列表（调用方回退到 keyword 搜索）。"""
     if not _available():
         return []
     vectors, meta = _load_index()
     if vectors is None or vectors.shape[0] == 0:
         return []
-    q = _encode([query])[0]
+    q = _encode([QUERY_INSTRUCTION + query])[0]
     denom = np.linalg.norm(vectors, axis=1) * np.linalg.norm(q) + 1e-10
     sims = vectors @ q / denom
-    order = np.argsort(-sims)[: max(1, int(limit))]
+    archived = set() if include_archived else set(meta.get("archived_ids") or [])
+    order = [i for i in np.argsort(-sims) if meta["task_ids"][i] not in archived]
+    order = order[: max(1, int(limit))]
     return [{"id": meta["task_ids"][i], "score": round(float(sims[i]), 4)}
             for i in order]

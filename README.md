@@ -106,18 +106,32 @@ kanban skill SKILL.md「定时执行」章节的最新模板（不要复制本�
 
 无人执行遇决策点时发钉钉单聊请求决策。申请步骤（人工，一次性）：
 
+**阿里内部（阿里钉平台）：**
+
+1. 登录 [mapp.alibaba-inc.com](https://mapp.alibaba-inc.com)，选择阿里巴巴组织
+2. 创建企业内部应用，添加「机器人」能力
+3. 机器人消息接收模式选 **Stream 模式**（免公网回调，本地可跑）
+4. 设置机器人可见范围为全员可见（或包含你所在部门）
+5. 如需在钉钉搜索中找到机器人，还需配置「搜索场景 → 内外导航」并提交审批（T+1 生效；钉钉搜索需在「功能」标签页查找）
+6. 从应用基础信息获取 AppKey / AppSecret；userId 为你的工号
+7. 安装钉钉依赖：`.venv/bin/pip install dingtalk-stream requests`
+
+**外部组织（标准钉钉开放平台）：**
+
 1. 在 dingtalk.com 用个人账号免费创建一个组织
-2. open.dingtalk.com -> 应用开发 -> 创建"企业内部应用"
-3. 添加"机器人"能力，消息接收模式选 **Stream 模式**（免公网回调，本地可跑）
+2. open.dingtalk.com → 应用开发 → 创建"企业内部应用"
+3. 添加"机器人"能力，消息接收模式选 **Stream 模式**
 4. 申请"机器人发送单聊消息"权限
 5. 记录 AppKey / AppSecret，从通讯录获取自己的 userId
-6. 写入 `~/.kanban/config.json`（勿提交到任何 git 仓库）：
+6. 安装钉钉依赖：`.venv/bin/pip install dingtalk-stream requests`
+
+**通用配置：**
+
+将凭据写入 `~/.kanban/config.json`（勿提交到任何 git 仓库）：
 
 ```json
 { "appKey": "...", "appSecret": "...", "userId": "..." }
 ```
-
-7. 安装钉钉依赖：`.venv/bin/pip install dingtalk-stream requests`
 
 配置存在时 MCP 服务自动启用 Stream 客户端；用户在钉钉回复 `T001 决策内容`，决策自动写回任务时间线并将任务退回 todo。回复容错：ID 宽松匹配（t1、T 001：等均可）；未带 ID 且仅一个任务在等决策时自动匹配；解析/流转失败会回复引导而非静默丢弃。未配置时相关功能静默降级，不影响其他能力。
 

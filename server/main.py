@@ -45,18 +45,22 @@ def add_task(title: str, description: str, status: str = "todo",
 
 
 @mcp.tool()
-def list_tasks(status: str = "", keyword: str = "", file_path: str = "") -> str:
+def list_tasks(status: str = "", keyword: str = "", file_path: str = "",
+               include_archived: bool = False) -> str:
     """列出任务摘要。可按 status 过滤；keyword 匹配标题/标签/正文；
-    file_path 按涉及文件反查任务（二次修改场景先用它定位历史任务）。"""
+    file_path 按涉及文件反查任务（二次修改场景先用它定位历史任务）；
+    include_archived=True 时连带已归档任务（done/discarded）一起返回。"""
     tasks = storage.list_tasks(status=status or None, keyword=keyword or None,
-                               file_path=file_path or None)
+                               file_path=file_path or None,
+                               include_archived=include_archived)
     return json.dumps(tasks, ensure_ascii=False)
 
 
-def _search_enriched(query: str, limit: int) -> list[dict]:
-    """语义检索并补全任务摘要字段；索引中残留的已归档任务静默跳过。"""
+def _search_enriched(query: str, limit: int, include_archived: bool = False) -> list[dict]:
+    """语义检索并补全任务摘要字段；索引中残留的孤儿任务静默跳过。"""
     enriched = []
-    for r in embedding.semantic_search(query, limit=limit):
+    for r in embedding.semantic_search(query, limit=limit,
+                                       include_archived=include_archived):
         try:
             task = storage.get_task(r["id"])
         except storage.TaskNotFound:
@@ -67,10 +71,12 @@ def _search_enriched(query: str, limit: int) -> list[dict]:
 
 
 @mcp.tool()
-def search_tasks(query: str, limit: int = 5) -> str:
+def search_tasks(query: str, limit: int = 5, include_archived: bool = False) -> str:
     """语义搜索任务：用自然语言描述你要找的任务，返回最相关的结果。
-    适用于回忆历史任务、用词不确定的场景。精确搜索请用 list_tasks 的 keyword 参数。"""
-    results = _search_enriched(query, limit)
+    适用于回忆历史任务、用词不确定的场景；include_archived=True 时连带
+    已归档任务一起搜（找历史决策/二次修改场景建议开启）。
+    精确搜索请用 list_tasks 的 keyword 参数。"""
+    results = _search_enriched(query, limit, include_archived=include_archived)
     if not results:
         return json.dumps({"results": [], "hint": "语义索引不可用或未安装 sentence-transformers，"
                                                  "请回退到 list_tasks 的 keyword 精确搜索"},
@@ -136,7 +142,7 @@ def discard_task(task_id: str, reason: str) -> str:
 
 @mcp.tool()
 def request_decision(task_id: str, question: str, options: list[str] | None = None) -> str:
-    """无人执行遇决策点时调用：任务转 waiting_decision 并发钉钉单聊卡片请求用户决策。
+    """无人执行遇决策点时调用：任务转 waiting_decision 并发钉钉单聊消息请求用户决策。
     需要 ~/.kanban/config.json 已配置钉钉凭证。"""
     pq = {"question": question, "options": options or []}
     try:
@@ -169,7 +175,8 @@ async def page_index(request: Request):
 async def api_list_tasks(request: Request):
     q = request.query_params
     tasks = storage.list_tasks(status=q.get("status"), keyword=q.get("keyword"),
-                               file_path=q.get("file_path"))
+                               file_path=q.get("file_path"),
+                               include_archived=q.get("include_archived") in ("1", "true"))
     return JSONResponse(tasks)
 
 
@@ -182,7 +189,8 @@ async def api_search_tasks(request: Request):
         limit = int(q.get("limit", 5))
     except ValueError:
         return JSONResponse({"error": "limit 需为整数"}, status_code=400)
-    results = _search_enriched(query, limit)
+    results = _search_enriched(query, limit,
+                               include_archived=q.get("include_archived") in ("1", "true"))
     if not results:
         return JSONResponse({"results": [], "hint": "语义索引不可用或未安装 sentence-transformers"})
     return JSONResponse({"results": results})
@@ -252,7 +260,7 @@ async def api_discard_task(request: Request):
 
 async def api_request_decision(request: Request):
     """HTTP 降级路径：等价于 MCP request_decision 工具。
-    任务转 waiting_decision + 发钉钉决策卡片。"""
+    任务转 waiting_decision + 发钉钉决策消息。"""
     body = await request.json()
     task_id = request.path_params["task_id"]
     question = body.get("question", "")

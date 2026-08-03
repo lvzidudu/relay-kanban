@@ -413,7 +413,7 @@
     <p class="section-desc">解除"无人执行只能跑无决策任务"限制。决策点可被表述为一条钉钉消息即可进定时队列。</p>
     <div class="card-grid" style="grid-template-columns: repeat(2, 1fr);">
       <div class="feature-card"><div class="icon">📨</div><h4>异步主路径</h4>
-        <p><code>request_decision()</code> → 转 waiting_decision → 发钉钉卡片 → 本轮正常结束，不吊着等人。</p></div>
+        <p><code>request_decision()</code> → 转 waiting_decision → 发钉钉决策消息 → 本轮正常结束，不吊着等人。</p></div>
       <div class="feature-card"><div class="icon">⏱️</div><h4>同步快路径</h4>
         <p><code>wait_for_decision()</code> 阻塞轮询，超时自动降级为异步。</p></div>
       <div class="feature-card"><div class="icon">💬</div><h4>回复闭环</h4>
@@ -421,9 +421,9 @@
       <div class="feature-card"><div class="icon">🔧</div><h4>回复容错</h4>
         <p>ID 宽松匹配（t1/T 001/T001 均可）；未带 ID 时自动匹配唯一等待中的任务。</p></div>
     </div>
-    <div class="placeholder">
-      <div class="icon">📱</div>
-      <p>钉钉卡片截图待补充<br><span style="font-size:12px">配置 <code>~/.kanban/config.json</code> 钉钉凭证后可触发实际卡片</span></p>
+    <div class="img-block">
+      <img src="screenshots/dingtalk-decision-card.png" alt="钉钉决策消息">
+      <div class="caption">钉钉单聊决策消息：展示任务 ID、决策问题和选项，用户直接回复即可闭环</div>
     </div>
   </div>
 </section>
@@ -460,7 +460,7 @@
     </div>
     <div class="scenario">
       <h4>🌙 夜间无人执行 <span class="tag">自动化</span></h4>
-      <p>unattended 任务定时自动捞取执行，遇决策点发钉钉卡片，次日打开对话看结果和待验收任务。</p>
+      <p>unattended 任务定时自动捞取执行，遇决策点发钉钉决策消息，次日打开对话看结果和待验收任务。</p>
     </div>
     <div class="scenario">
       <h4>📋 需求拆解 <span class="tag">项目管理</span></h4>

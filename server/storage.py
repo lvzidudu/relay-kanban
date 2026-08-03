@@ -47,10 +47,11 @@ def _index_upsert(task_id: str) -> None:
         pass
 
 
-def _index_remove(task_id: str) -> None:
+def _index_archive(task_id: str) -> None:
+    """语义索引打归档标（向量保留，默认检索不再命中）：失败不阻断归档流程。"""
     try:
         from . import embedding
-        embedding.remove_task(task_id)
+        embedding.mark_archived(task_id)
     except Exception:
         pass
 
@@ -81,6 +82,12 @@ def _task_path(task_id: str) -> Path:
     return matches[0]
 
 
+def _archived_task_path(task_id: str) -> Path | None:
+    """在 archive/YYYY-MM/ 下查找归档任务文件，找不到返回 None。"""
+    matches = sorted(ARCHIVE_DIR.glob(f"*/{task_id}-*.md"), reverse=True)
+    return matches[0] if matches else None
+
+
 def _load(path: Path) -> frontmatter.Post:
     return frontmatter.load(str(path))
 
@@ -100,11 +107,16 @@ def _now_stamp() -> str:
 # ---------- 查询 ----------
 
 def list_tasks(status: str | None = None, keyword: str | None = None,
-               file_path: str | None = None) -> list[dict]:
-    """返回任务摘要列表，按 (优先级, 创建日期) 排序。"""
+               file_path: str | None = None,
+               include_archived: bool = False) -> list[dict]:
+    """返回任务摘要列表，按 (优先级, 创建日期) 排序。
+    include_archived=True 时连带 archive/ 下的归档任务（done/discarded）一起返回。"""
     ensure_dirs()
+    paths = sorted(TASKS_DIR.glob("T*-*.md"))
+    if include_archived:
+        paths += sorted(ARCHIVE_DIR.glob("*/T*-*.md"))
     result = []
-    for p in sorted(TASKS_DIR.glob("T*-*.md")):
+    for p in paths:
         post = _load(p)
         meta = post.metadata
         if status and meta.get("status") != status:
@@ -139,8 +151,14 @@ def list_tasks(status: str | None = None, keyword: str | None = None,
 
 
 def get_task(task_id: str) -> dict:
-    """返回完整任务：摘要字段 + 全文内容。"""
-    path = _task_path(task_id)
+    """返回完整任务：摘要字段 + 全文内容。活跃任务找不到时回退到 archive/
+    （只读恢复上下文；归档任务的写操作仍会因 _task_path 找不到而拒绝）。"""
+    try:
+        path = _task_path(task_id)
+    except TaskNotFound:
+        path = _archived_task_path(task_id)
+        if path is None:
+            raise
     post = _load(path)
     meta = post.metadata
     return {
@@ -217,7 +235,7 @@ def update_status(task_id: str, new_status: str, note: str | None = None,
         month_dir.mkdir(parents=True, exist_ok=True)
         _dump(post, month_dir / path.name)
         path.unlink()
-        _index_remove(task_id)
+        _index_archive(task_id)
     else:
         _dump(post, path)
     rebuild_board()
@@ -288,7 +306,7 @@ def discard_task(task_id: str, reason: str) -> dict:
     _dump(post, month_dir / path.name)
     path.unlink()
     rebuild_board()
-    _index_remove(task_id)
+    _index_archive(task_id)
     return {"id": task_id, "status": "discarded"}
 
 

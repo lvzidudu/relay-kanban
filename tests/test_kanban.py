@@ -116,14 +116,22 @@ def test_status_flow_and_archive(kanban_home):
         storage.update_status(tid, "todo")
     storage.update_status(tid, "todo", note="边界条件有 bug")
     assert "边界条件有 bug" in storage.get_task(tid)["content"]
-    # 走到 done：文件归档，tasks/ 目录清空
+    # 走到 done：文件归档，tasks/ 目录清空；get_task 回退到 archive/ 可读，
+    # 但写操作（状态流转/追加时间线）仍拒绝
     storage.update_status(tid, "doing")
     storage.update_status(tid, "review")
     storage.update_status(tid, "done")
+    assert storage.get_task(tid)["status"] == "done"
     with pytest.raises(storage.TaskNotFound):
-        storage.get_task(tid)
+        storage.update_status(tid, "todo", note="x")
+    with pytest.raises(storage.TaskNotFound):
+        storage.append_task_log(tid, "- 追加")
     archived = list((kanban_home / "archive").rglob("T001-*.md"))
     assert len(archived) == 1
+    # 默认列表不含归档；include_archived=True 时可见
+    assert storage.list_tasks() == []
+    listed = storage.list_tasks(include_archived=True)
+    assert [t["id"] for t in listed] == [tid] and listed[0]["status"] == "done"
 
 
 def test_append_log(kanban_home):
@@ -157,8 +165,8 @@ def test_discard_task(kanban_home):
     with pytest.raises(ValueError):
         storage.discard_task(tid, "")
     storage.discard_task(tid, "需求已变更")
-    with pytest.raises(storage.TaskNotFound):
-        storage.get_task(tid)
+    # get_task 回退到 archive/ 仍可读（只读恢复上下文），状态为 discarded
+    assert storage.get_task(tid)["status"] == "discarded"
     archived = list((kanban_home / "archive").rglob("T001-*.md"))
     assert len(archived) == 1
     text = archived[0].read_text()
@@ -316,7 +324,7 @@ def test_semantic_search_degrades_gracefully(kanban_home, monkeypatch):
     assert not (kanban_home / "index").exists()
 
 
-def test_upsert_and_remove(embed_env, kanban_home):
+def test_upsert_and_archive_flag(embed_env, kanban_home):
     t1 = storage.add_task("auth 任务", "x")
     t2 = storage.add_task("pay 任务", "x")
     meta = json.loads((kanban_home / "index" / "meta.json").read_text())
@@ -324,12 +332,24 @@ def test_upsert_and_remove(embed_env, kanban_home):
     assert meta["task_ids"] == [t1, t2]
     assert meta["row_map"] == {t1: 0, t2: 1}
     assert vectors.shape[0] == 2
-    # 废弃后从索引移除，meta 与向量行数保持一致
+    # 废弃后向量保留、打 archived 标；默认检索不命中，include_archived 时可搜到
     storage.discard_task(t1, "不需要了")
     meta = json.loads((kanban_home / "index" / "meta.json").read_text())
     vectors = embed_env.load(kanban_home / "index" / "vectors.npy")
-    assert meta["task_ids"] == [t2] and vectors.shape[0] == 1
+    assert meta["task_ids"] == [t1, t2] and vectors.shape[0] == 2
+    assert meta["archived_ids"] == [t1]
     assert [h["id"] for h in embedding.semantic_search("auth", limit=5)] == [t2]
+    hits = embedding.semantic_search("auth", limit=5, include_archived=True)
+    assert [h["id"] for h in hits] == [t1, t2]
+
+
+def test_remove_task_physically(embed_env, kanban_home):
+    t1 = storage.add_task("auth 任务", "x")
+    t2 = storage.add_task("pay 任务", "x")
+    embedding.remove_task(t1)
+    meta = json.loads((kanban_home / "index" / "meta.json").read_text())
+    vectors = embed_env.load(kanban_home / "index" / "vectors.npy")
+    assert meta["task_ids"] == [t2] and vectors.shape[0] == 1
 
 
 def test_edit_task_reembeds(embed_env):
@@ -339,14 +359,17 @@ def test_edit_task_reembeds(embed_env):
     assert hits[0]["id"] == tid and hits[0]["score"] == pytest.approx(1.0, abs=1e-3)
 
 
-def test_done_task_removed_from_index(embed_env, kanban_home):
+def test_done_task_archived_in_index(embed_env, kanban_home):
     tid = storage.add_task("auth 任务", "x")
     storage.update_status(tid, "doing")
     storage.update_status(tid, "review")
     storage.update_status(tid, "done")
+    # 向量保留 + archived 标；默认搜不到，include_archived 时能搜到
     meta = json.loads((kanban_home / "index" / "meta.json").read_text())
-    assert meta["task_ids"] == []
+    assert meta["task_ids"] == [tid] and meta["archived_ids"] == [tid]
     assert embedding.semantic_search("auth", limit=5) == []
+    hits = embedding.semantic_search("auth", limit=5, include_archived=True)
+    assert [h["id"] for h in hits] == [tid]
 
 
 def test_index_persistence(embed_env, kanban_home, monkeypatch):

@@ -11,11 +11,11 @@ description: Relay：独立于工作区的本地任务看板（~/.kanban/），�
 
 1. **kanban MCP 工具**（add_task / list_tasks / get_task / update_status / append_task_log / edit_task / discard_task）
 2. **HTTP API**（MCP 不可用时首选）：服务常驻 http://localhost:7654 ，用 curl 调用，状态机由服务端校验，BOARD.md 自动重建：
-   - `GET /api/tasks?status=&keyword=&file_path=` 列任务；`GET /api/tasks/{id}` 读全文
+   - `GET /api/tasks?status=&keyword=&file_path=&include_archived=` 列任务（include_archived=1 时含归档）；`GET /api/tasks/{id}` 读全文（归档任务也可读，只读不可写）
    - `POST /api/tasks` 建任务（body: title/description/status/priority/unattended/workspace/files/tags）
    - `PATCH /api/tasks/{id}` 状态流转（body: status/note）；`PUT /api/tasks/{id}` 编辑
    - `POST /api/tasks/{id}/log` 追加时间线（body: entry/source）；`POST /api/tasks/{id}/discard` 废弃（body: reason）
-   - `POST /api/tasks/{id}/decision` 决策升级（body: question/options）：等价于 MCP request_decision，转 waiting_decision + 发钉钉卡片
+   - `POST /api/tasks/{id}/decision` 决策升级（body: question/options）：等价于 MCP request_decision，转 waiting_decision + 发钉钉决策消息
    - `GET /api/schedule` 读定时配置；`PUT /api/schedule` 写（body: enabled/time/max_per_run）
 3. **直接文件读写**（仅当 7654 也不可达时）：需自行遵守下方状态机并重新生成 BOARD.md
 
@@ -132,4 +132,4 @@ kanban skill SKILL.md「定时执行」章节的最新模板（不要复制本�
 
 ## 决策升级（P3，钉钉）
 
-无人执行遇决策点时调用 request_decision(task_id, question, options)：任务转 waiting_decision、发钉钉卡片、本轮正常结束。MCP 不可用时降级为 HTTP：`POST /api/tasks/{id}/decision`（body: question/options），效果相同。需要秒级往返时可用 wait_for_decision(task_id, timeout_sec)，超时自动降级为异步。用户在钉钉的回复由 MCP 服务写回时间线并将任务退回 todo，下次捞任务时带决策继续。
+无人执行遇决策点时调用 request_decision(task_id, question, options)：任务转 waiting_decision、发钉钉决策消息、本轮正常结束。MCP 不可用时降级为 HTTP：`POST /api/tasks/{id}/decision`（body: question/options），效果相同。需要秒级往返时可用 wait_for_decision(task_id, timeout_sec)，超时自动降级为异步。用户在钉钉的回复由 MCP 服务写回时间线并将任务退回 todo，下次捞任务时带决策继续。

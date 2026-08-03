@@ -39,7 +39,7 @@ install.sh 自动完成：建 venv → 装依赖 → 部署 skill + 三条 alway
 
 ## 可选能力
 
-- **钉钉决策升级**：无人执行遇决策点时发钉钉单聊。需自行创建钉钉企业内部应用（Stream 模式机器人），将 AppKey / AppSecret / userId 写入 `~/.kanban/config.json`（勿提交到任何 git 仓库），并安装 `dingtalk-stream requests`。详见仓库 README。
+- **钉钉决策升级**：无人执行遇决策点时发钉钉单聊。需自行创建钉钉企业内部应用（Stream 模式机器人），将 AppKey / AppSecret / userId 写入 `~/.kanban/config.json`（勿提交到任何 git 仓库），并安装 `dingtalk-stream requests`。阿里内部用户通过 [mapp.alibaba-inc.com](https://mapp.alibaba-inc.com) 创建，userId 为工号；外部组织通过 open.dingtalk.com 创建。详见仓库 README。
 - **定时无人执行**：在看板 UI 的“⏰ 定时”表单配置，落盘 `~/.kanban/schedule.json`；首次点火需经 Qoder 定时任务入口手动创建（skill 的开场对账会给出指引）。
 
 ## 数据与隐私

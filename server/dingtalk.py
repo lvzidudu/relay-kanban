@@ -1,4 +1,4 @@
-"""钉钉决策升级（P3）：Stream 客户端 + 单聊卡片发送 + 回复写回。
+"""钉钉决策升级（P3）：Stream 客户端 + 单聊消息发送 + 回复写回。
 
 依赖 ~/.kanban/config.json：{"appKey": "...", "appSecret": "...", "userId": "..."}
 未配置时所有函数静默降级（不影响 MVP/P1/P2 功能）。
@@ -14,6 +14,13 @@ import time
 
 from . import storage
 from .state_machine import TransitionError
+
+# 钉钉 API 白名单对 IPv6 支持不稳定，强制 IPv4 避免偶发 IpNotInWhiteList
+try:
+    import urllib3.util.connection as _urllib3_conn
+    _urllib3_conn.HAS_IPV6 = False
+except Exception:
+    pass
 
 CONFIG_FILE = storage.KANBAN_DIR / "config.json"
 
@@ -39,7 +46,7 @@ def enabled() -> bool:
 
 
 def send_markdown(title: str, text: str) -> bool:
-    """发送单聊 markdown 消息（决策卡片/兜底提醒共用）。未配置钉钉时返回 False。"""
+    """发送单聊 markdown 消息（决策消息/兜底提醒共用）。未配置钉钉时返回 False。"""
     cfg = _load_config()
     if cfg is None:
         return False
