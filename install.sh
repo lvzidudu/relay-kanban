@@ -1,5 +1,5 @@
 #!/bin/bash
-# Relay (kanban-system) 一键安装脚本
+# Relay Kanban 一键安装脚本
 # 功能：创建 venv 并安装依赖、部署 skill 与 rules 到 ~/.qoder/、打印 MCP 注册配置
 # 用法：./install.sh [--launchd | --rules-only]
 #   --launchd     额外安装开机常驻的 Web UI 服务（仅 macOS）

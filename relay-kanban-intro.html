@@ -386,10 +386,7 @@
     </div>
 
     <h3>任务详情：时间线 + 元信息</h3>
-    <div class="img-block">
-      <img src="screenshots/task-detail.png" alt="任务详情">
-      <div class="caption">任务详情弹窗：状态/优先级/工作区/文件 + 描述（Markdown）+ 结构化时间线</div>
-    </div>
+    <p>任务详情展示状态、优先级、工作区、关联文件、Markdown 描述与只追加的结构化时间线，支持从历史决策恢复上下文。</p>
   </div>
 </section>
 
@@ -428,8 +425,8 @@
         <p>ID 宽松匹配（t1/T 001/T001 均可）；未带 ID 时自动匹配唯一等待中的任务。</p></div>
     </div>
     <div class="img-block">
-      <img src="screenshots/dingtalk-decision-card.png" alt="钉钉决策消息">
-      <div class="caption">钉钉单聊决策消息：展示任务 ID、决策问题和选项，用户直接回复即可闭环</div>
+      <img src="screenshots/dingtalk-flow.png" alt="钉钉异步决策流程">
+      <div class="caption">决策升级流程：Agent 发起请求，用户异步回复后将决策写入时间线并恢复任务</div>
     </div>
   </div>
 </section>
@@ -441,8 +438,8 @@
     <p class="section-desc">三种方式，从一键部署到手动配置。</p>
     <div class="steps">
       <div class="step">
-        <h4>Qoder 插件市场（推荐）</h4>
-        <p>对 Agent 说：<code>帮我装 relay-kanban 插件并补齐完整体验</code><br>或 CLI：<code>qodercli plugin install relay-kanban@aone</code></p>
+        <h4>Plugin 声明</h4>
+        <p>仓库内含标准 Plugin 清单、Skill、Rules 与 MCP 配置；完整服务端和 Web UI 需执行安装脚本。</p>
       </div>
       <div class="step">
         <h4>脚本安装</h4>

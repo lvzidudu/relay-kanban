@@ -7,7 +7,7 @@
 要求 Python >= 3.10（或已安装 [uv](https://github.com/astral-sh/uv)）：
 
 ```bash
-git clone https://code.alibaba-inc.com/lg-qingxingzhou/kanban-system.git && cd kanban-system && ./install.sh
+git clone https://github.com/lvzidudu/relay-kanban.git && cd relay-kanban && ./install.sh
 ```
 
 install.sh 自动完成：建 venv → 装依赖 → 部署 skill + 三条 always-on rules 到 ~/.qoder/ → 初始化 ~/.kanban/ → **把 kanban MCP 自动写入 ~/.qoder/mcp.json**（已有内容则合并，先备份；无需手动填路径）。
@@ -29,9 +29,9 @@ install.sh 自动完成：建 venv → 装依赖 → 部署 skill + 三条 alway
 {
   "mcpServers": {
     "kanban": {
-      "command": "/绝对路径/kanban-system/.venv/bin/python",
+      "command": "/绝对路径/relay-kanban/.venv/bin/python",
       "args": ["-m", "server.main"],
-      "cwd": "/绝对路径/kanban-system"
+      "cwd": "/绝对路径/relay-kanban"
     }
   }
 }
@@ -39,7 +39,7 @@ install.sh 自动完成：建 venv → 装依赖 → 部署 skill + 三条 alway
 
 ## 可选能力
 
-- **钉钉决策升级**：无人执行遇决策点时发钉钉单聊。需自行创建钉钉企业内部应用（Stream 模式机器人），将 AppKey / AppSecret / userId 写入 `~/.kanban/config.json`（勿提交到任何 git 仓库），并安装 `dingtalk-stream requests`。阿里内部用户通过 [mapp.alibaba-inc.com](https://mapp.alibaba-inc.com) 创建，userId 为工号；外部组织通过 open.dingtalk.com 创建。详见仓库 README。
+- **钉钉决策升级**：无人执行遇决策点时发钉钉单聊。需在[钉钉开放平台](https://open.dingtalk.com/)创建 Stream 模式机器人，将 AppKey / AppSecret / userId 写入 `~/.kanban/config.json`（勿提交到任何 Git 仓库或截图分享），并安装 `.[dingtalk]` 可选依赖。详见仓库 README。
 - **定时无人执行**：在看板 UI 的“⏰ 定时”表单配置，落盘 `~/.kanban/schedule.json`；首次点火需经 Qoder 定时任务入口手动创建（skill 的开场对账会给出指引）。
 
 ## 数据与隐私
