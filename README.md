@@ -6,7 +6,7 @@
 
 Relay：独立于工作区的本地任务看板，按功能维度聚合跨对话上下文，人负责发布任务与验收，agent 负责捞任务接力执行。
 
-![Relay Kanban 看板界面](screenshots/board-overview.png)
+[查看包含完整界面与流程截图的单文件项目介绍](relay-kanban-intro-share.html)
 
 ## 核心能力
 
@@ -15,8 +15,6 @@ Relay：独立于工作区的本地任务看板，按功能维度聚合跨对话
 - **人机验收闭环**：`todo → doing → review → done` 强状态机；验收退回必须附带反馈并写入时间线。
 - **三级接入与降级**：Agent 可经 MCP、HTTP API 或直接文件读写接入；上层能力不可用时仍能维护任务数据。
 - **无人值守与决策升级**：支持定时捞取任务、单轮上限、断链提醒，以及可选的钉钉异步决策回写。
-
-![Relay Kanban 架构](screenshots/architecture.png)
 
 - 数据目录：`~/.kanban/`（任务文件 + BOARD.md 索引，可自行 git 管理）
 - Skill：`~/.qoder/skills/kanban/SKILL.md`（源文件在本仓库 `skills/kanban/`，修改后需重新复制部署）
