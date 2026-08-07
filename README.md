@@ -1,5 +1,7 @@
 # Relay 任务看板系统
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 对话是易失的，任务是持久的。Relay 把 AI 代理的工作单元从"对话流"迁移到"任务流"：每个任务是一个 Markdown 文件（frontmatter + 只追加的时间线），由严格状态机驱动（backlog → todo → doing → review → done）。代理通过 MCP 工具、HTTP API 或直接文件读写三级降级接入；人通过 Web UI 建任务、验收、配置定时；无人值守时支持链式定时执行与钉钉决策升级。
 
 Relay：独立于工作区的本地任务看板，按功能维度聚合跨对话上下文，人负责发布任务与验收，agent 负责捞任务接力执行。
