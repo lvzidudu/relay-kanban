@@ -1,8 +1,20 @@
 # Relay 任务看板系统
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 对话是易失的，任务是持久的。Relay 把 AI 代理的工作单元从"对话流"迁移到"任务流"：每个任务是一个 Markdown 文件（frontmatter + 只追加的时间线），由严格状态机驱动（backlog → todo → doing → review → done）。代理通过 MCP 工具、HTTP API 或直接文件读写三级降级接入；人通过 Web UI 建任务、验收、配置定时；无人值守时支持链式定时执行与钉钉决策升级。
 
 Relay：独立于工作区的本地任务看板，按功能维度聚合跨对话上下文，人负责发布任务与验收，agent 负责捞任务接力执行。
+
+[查看包含完整界面与流程截图的单文件项目介绍](relay-kanban-intro-share.html)
+
+## 核心能力
+
+- **任务级持久上下文**：Task + State Machine + Timeline 将需求、决策、代码改动与验收反馈沉淀为可版本化的 Markdown 文件。
+- **跨会话接力**：新会话通过任务摘要、时间线和文件索引恢复上下文，不依赖单次对话窗口。
+- **人机验收闭环**：`todo → doing → review → done` 强状态机；验收退回必须附带反馈并写入时间线。
+- **三级接入与降级**：Agent 可经 MCP、HTTP API 或直接文件读写接入；上层能力不可用时仍能维护任务数据。
+- **无人值守与决策升级**：支持定时捞取任务、单轮上限、断链提醒，以及可选的钉钉异步决策回写。
 
 - 数据目录：`~/.kanban/`（任务文件 + BOARD.md 索引，可自行 git 管理）
 - Skill：`~/.qoder/skills/kanban/SKILL.md`（源文件在本仓库 `skills/kanban/`，修改后需重新复制部署）
@@ -13,7 +25,8 @@ Relay：独立于工作区的本地任务看板，按功能维度聚合跨对话
 要求 Python >= 3.10（或已安装 [uv](https://github.com/astral-sh/uv)，脚本会自动用它装受管 Python 3.12）：
 
 ```bash
-git clone https://code.alibaba-inc.com/lg-qingxingzhou/kanban-system.git && cd kanban-system
+git clone https://github.com/lvzidudu/relay-kanban.git
+cd relay-kanban
 ./install.sh            # 建 venv + 装依赖 + 部署 skill/rules + 初始化 ~/.kanban/
 ./install.sh --launchd  # 可选：额外把 Web UI 注册为 macOS 开机常驻服务
 ```
@@ -104,26 +117,12 @@ kanban skill SKILL.md「定时执行」章节的最新模板（不要复制本�
 
 ## 钉钉决策升级（P3，可选）
 
-无人执行遇决策点时发钉钉单聊请求决策。申请步骤（人工，一次性）：
+无人执行遇到决策点时，可通过钉钉机器人发送单聊请求。配置步骤：
 
-**阿里内部（阿里钉平台）：**
-
-1. 登录 [mapp.alibaba-inc.com](https://mapp.alibaba-inc.com)，选择阿里巴巴组织
-2. 创建企业内部应用，添加「机器人」能力
-3. 机器人消息接收模式选 **Stream 模式**（免公网回调，本地可跑）
-4. 设置机器人可见范围为全员可见（或包含你所在部门）
-5. 如需在钉钉搜索中找到机器人，还需配置「搜索场景 → 内外导航」并提交审批（T+1 生效；钉钉搜索需在「功能」标签页查找）
-6. 从应用基础信息获取 AppKey / AppSecret；userId 为你的工号
-7. 安装钉钉依赖：`.venv/bin/pip install dingtalk-stream requests`
-
-**外部组织（标准钉钉开放平台）：**
-
-1. 在 dingtalk.com 用个人账号免费创建一个组织
-2. open.dingtalk.com → 应用开发 → 创建"企业内部应用"
-3. 添加"机器人"能力，消息接收模式选 **Stream 模式**
-4. 申请"机器人发送单聊消息"权限
-5. 记录 AppKey / AppSecret，从通讯录获取自己的 userId
-6. 安装钉钉依赖：`.venv/bin/pip install dingtalk-stream requests`
+1. 在[钉钉开放平台](https://open.dingtalk.com/)创建应用并添加机器人能力。
+2. 将消息接收模式设为 **Stream 模式**，申请机器人单聊消息权限。
+3. 记录 AppKey、AppSecret 和接收人的 userId。
+4. 安装可选依赖：`.venv/bin/pip install '.[dingtalk]'`。
 
 **通用配置：**
 
@@ -134,6 +133,8 @@ kanban skill SKILL.md「定时执行」章节的最新模板（不要复制本�
 ```
 
 配置存在时 MCP 服务自动启用 Stream 客户端；用户在钉钉回复 `T001 决策内容`，决策自动写回任务时间线并将任务退回 todo。回复容错：ID 宽松匹配（t1、T 001：等均可）；未带 ID 且仅一个任务在等决策时自动匹配；解析/流转失败会回复引导而非静默丢弃。未配置时相关功能静默降级，不影响其他能力。
+
+> 安全提示：`~/.kanban/config.json` 含机器人凭据，禁止提交到 Git、截图分享或写入任务时间线。泄露后应立即在钉钉开放平台轮换 AppSecret。
 
 ## 状态机
 
@@ -148,23 +149,23 @@ backlog -> todo -> doing -> review -> done（归档至 archive/YYYY-MM/）
 
 状态机外的两个操作：`edit_task`（编辑元信息与描述，时间线不可改）、`discard_task`（废弃 = 软删除，reason 必填，写入时间线后归档，不经 review 验收）。直接归档（绕过验收的 done）故意不提供。
 
-## ACA 插件用户须知（从 ACA 市场安装时必看）
+## Plugin 安装说明
 
-`qodercli plugin install relay-kanban@aone` 只能拿到插件的"声明层"（skill + mcp 配置），**完整体验需要再跑一次本仓库的 install.sh**。能力分层如下：
+仓库根目录包含标准 Plugin 声明，但通过插件包安装时通常只能获得 skill 与 MCP 配置等"声明层"；**完整体验仍需克隆本仓库并执行 `install.sh`**。能力分层如下：
 
 | 能力 | 仅装插件 | 插件 + install.sh |
 |---|---|---|
 | `/kanban` `/todo` 对话命令（skill） | ✅ | ✅ |
 | 9 个 MCP 任务工具（add_task / list_tasks 等） | ❌ 无服务端，skill 降级到直接读写 ~/.kanban/ 文件 | ✅ |
 | 看板 Web UI（http://localhost:7654 拖拽验收） | ❌ | ✅ |
-| 三条 always-on 规则（开场简报/话题捕获/改动回写） | ❌ ACA 不支持 rules 组件 | ✅ |
+| 三条 always-on 规则（开场简报/话题捕获/改动回写） | 取决于宿主是否支持 rules | ✅ |
 | 钉钉决策升级 / 定时无人执行 | ❌ | ✅（钉钉需额外配置，见下方章节） |
 
 **补齐完整体验（一次性，可直接交给 agent 执行）**：
 
 ```bash
-git clone https://code.alibaba-inc.com/lg-qingxingzhou/kanban-system.git
-cd kanban-system && ./install.sh
+git clone https://github.com/lvzidudu/relay-kanban.git
+cd relay-kanban && ./install.sh
 ```
 
 install.sh 会自动完成全部步骤，**无需人工介入**：建 venv（优先 uv，否则系统 Python ≥ 3.10）→ 装依赖 → 部署 skill + rules 到 ~/.qoder/ → 初始化 ~/.kanban/ 数据目录 → **把 kanban MCP 自动注册进 ~/.qoder/mcp.json**（已有内容则合并，先备份）。
@@ -177,6 +178,20 @@ install.sh 会自动完成全部步骤，**无需人工介入**：建 venv（优
 4. 浏览器开 http://localhost:7654 → 看到看板列（若未启动，跑 `.venv/bin/python -m server.main --web-only` 或用 `./install.sh --launchd` 注册常驻）
 
 已装过插件会不会冲突？不会——skill 文件同名覆盖（内容一致），rule 已存在则跳过不覆盖，mcp.json 只新增/更新 kanban 一个条目。只想补 rules 不想动其他（比如 MCP 已手动配好），用 `./install.sh --rules-only`。
+
+## 阶段验证
+
+以下数据来自作者个人真实使用，截至 2026-08-07，用于验证任务级上下文方案的可行性，不代表多人生产环境基准：
+
+| 指标 | 结果 | 口径 |
+|---|---:|---|
+| 累计承载任务 | 44 | 在 Relay 中创建并实际推进的任务 |
+| 跨会话接力率 | 17% | 至少由两个独立 Agent 会话连续处理的任务占比 |
+| 决策可追溯率 | 29% | 时间线中沉淀了关键技术或产品决策的任务占比 |
+| HTTP 调用延迟 | P50 约 6 ms | 本地服务主动调用，不含模型推理时间 |
+| 基础上下文开销 | 单会话约 1K Token | 开场简报与任务恢复的基础注入量 |
+
+阶段数据表明，Relay 可以用较小的即时延迟与上下文开销换取跨会话任务连续性。当前样本仍以个人使用为主，后续将继续补充多人协作、任务完成率与端到端 Token 收益评测。
 
 ## 看板 UI
 

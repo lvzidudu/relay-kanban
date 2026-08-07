@@ -1,6 +1,6 @@
 [project]
-name = "kanban-system"
-version = "0.1.0"
+name = "relay-kanban"
+version = "0.1.6"
 description = "独立于工作区的本地任务看板：MCP 工具 + Web UI + 钉钉决策升级"
 requires-python = ">=3.10"
 dependencies = [
